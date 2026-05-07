@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
-const API = (import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api'
 const CATEGORIES = ['مشاوي', 'رئيسية', 'مشروبات', 'مقبلات', 'حلويات', 'برغر', 'أسماك', 'دجاج', 'أخرى']
 const MENU_KEY = 'dalilak_my_menu'
 
@@ -10,6 +9,27 @@ const loadMenu = () => {
   try { return JSON.parse(localStorage.getItem(MENU_KEY) || '[]') } catch { return [] }
 }
 const saveMenu = (m) => localStorage.setItem(MENU_KEY, JSON.stringify(m))
+
+// ─── ضغط الصورة قبل الحفظ ───
+const compressImage = (file, maxWidth = 500, quality = 0.6) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let w = img.width, h = img.height
+        if (w > maxWidth) { h = (maxWidth / w) * h; w = maxWidth }
+        canvas.width = w; canvas.height = h
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
 
 const inp = {
   width:'100%', padding:'0.75rem 0.9rem', borderRadius:'14px',
@@ -22,72 +42,47 @@ export default function MenuManagerPage() {
   const navigate = useNavigate()
   const { isLoggedIn, canEditMenu } = useAuth()
   const [items,    setItems]    = useState(loadMenu)
-  const [editing,  setEditing]  = useState(null) // null | index | 'new'
+  const [editing,  setEditing]  = useState(null)
   const [form,     setForm]     = useState({ name:'', price:'', category:'مشاوي', description:'', image:'' })
   const [activeTab, setActiveTab] = useState('all')
   const [uploading, setUploading] = useState(false)
-  const [preview,   setPreview]   = useState(null)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const openNew = () => {
     setForm({ name:'', price:'', category:'مشاوي', description:'', image:'' })
-    setPreview(null)
     setEditing('new')
   }
 
   const openEdit = (idx) => {
     setForm({ ...items[idx] })
-    setPreview(items[idx].image || null)
     setEditing(idx)
   }
 
-  // ─── رفع الصورة من الاستوديو ───
+  // ─── اختيار صورة من الاستوديو أو الكاميرا ───
   const handleImagePick = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-
-    // عرض preview فوري
-    const reader = new FileReader()
-    reader.onload = (ev) => setPreview(ev.target.result)
-    reader.readAsDataURL(file)
-
-    // رفع للسيرفر
     setUploading(true)
     try {
-      const formData = new FormData()
-      formData.append('image', file)
-
-      const res = await fetch(`${API}/upload`, {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await res.json()
-
-      if (data.success) {
-        set('image', data.url)
-      } else {
-        alert('فشل رفع الصورة: ' + (data.message || 'خطأ'))
-      }
+      const compressed = await compressImage(file)
+      set('image', compressed)
     } catch (err) {
-      console.error('Upload error:', err)
-      alert('فشل الاتصال بالسيرفر')
+      console.error('Image compression error:', err)
+      alert('حدث خطأ أثناء معالجة الصورة')
     } finally {
       setUploading(false)
     }
   }
 
-  const removeImage = () => {
-    set('image', '')
-    setPreview(null)
-  }
+  const removeImage = () => set('image', '')
 
   const handleSave = () => {
     if (!form.name.trim()) return
     const next = [...items]
     if (editing === 'new') next.push({ ...form, id: Date.now().toString() })
     else next[editing] = { ...form }
-    setItems(next); saveMenu(next); setEditing(null); setPreview(null)
+    setItems(next); saveMenu(next); setEditing(null)
   }
 
   const handleDelete = (idx) => {
@@ -293,55 +288,52 @@ export default function MenuManagerPage() {
                 📷 صورة الصنف
               </label>
 
-              {preview || form.image ? (
+              {form.image ? (
                 // ─── عرض الصورة المختارة ───
-                <div style={{ position:'relative', borderRadius:'14px', overflow:'hidden', marginBottom:'0.5rem' }}>
-                  <img 
-                    src={preview || form.image} 
-                    alt="صورة الصنف" 
-                    style={{ 
-                      width:'100%', height:'160px', objectFit:'cover', 
-                      borderRadius:'14px', border:'1px solid var(--border-color)',
-                    }} 
-                  />
-                  {uploading && (
-                    <div style={{
-                      position:'absolute', inset:0, background:'rgba(0,0,0,0.6)',
-                      display:'flex', alignItems:'center', justifyContent:'center',
-                      borderRadius:'14px',
-                    }}>
+                <div>
+                  <div style={{ 
+                    position:'relative', borderRadius:'14px', overflow:'hidden',
+                    border:'1px solid var(--border-color)',
+                  }}>
+                    <img 
+                      src={form.image} 
+                      alt="صورة الصنف" 
+                      style={{ width:'100%', height:'160px', objectFit:'cover', display:'block' }} 
+                    />
+                    {uploading && (
                       <div style={{
-                        width:'36px', height:'36px', borderRadius:'50%',
-                        border:'3px solid rgba(255,255,255,0.3)',
-                        borderTopColor:'#fff',
-                        animation:'spin 0.8s linear infinite',
-                      }} />
-                      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-                    </div>
-                  )}
-                  {!uploading && (
-                    <div style={{ 
-                      display:'flex', gap:'0.5rem', marginTop:'0.5rem',
+                        position:'absolute', inset:0, background:'rgba(0,0,0,0.6)',
+                        display:'flex', alignItems:'center', justifyContent:'center',
+                      }}>
+                        <div style={{
+                          width:'36px', height:'36px', borderRadius:'50%',
+                          border:'3px solid rgba(255,255,255,0.3)',
+                          borderTopColor:'#fff',
+                          animation:'spin 0.8s linear infinite',
+                        }} />
+                        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display:'flex', gap:'0.5rem', marginTop:'0.5rem' }}>
+                    <label style={{
+                      flex:1, padding:'0.5rem', borderRadius:'10px', textAlign:'center',
+                      background:'rgba(255,255,255,0.06)', border:'1px solid var(--border-color)',
+                      color:'var(--text-secondary)', fontSize:'0.78rem', fontWeight:600,
+                      cursor:'pointer', fontFamily:'var(--font-main)',
                     }}>
-                      <label style={{
-                        flex:1, padding:'0.5rem', borderRadius:'10px', textAlign:'center',
-                        background:'rgba(255,255,255,0.06)', border:'1px solid var(--border-color)',
-                        color:'var(--text-secondary)', fontSize:'0.78rem', fontWeight:600,
-                        cursor:'pointer', fontFamily:'var(--font-main)',
-                      }}>
-                        🔄 تغيير الصورة
-                        <input type="file" accept="image/*" onChange={handleImagePick} style={{ display:'none' }} />
-                      </label>
-                      <button onClick={removeImage} style={{
-                        padding:'0.5rem 0.8rem', borderRadius:'10px',
-                        background:'rgba(200,50,50,0.08)', border:'1px solid rgba(200,50,50,0.3)',
-                        color:'#ff9090', fontSize:'0.78rem', fontWeight:600,
-                        cursor:'pointer', fontFamily:'var(--font-main)',
-                      }}>
-                        🗑️ حذف
-                      </button>
-                    </div>
-                  )}
+                      🔄 تغيير الصورة
+                      <input type="file" accept="image/*" onChange={handleImagePick} style={{ display:'none' }} />
+                    </label>
+                    <button onClick={removeImage} style={{
+                      padding:'0.5rem 0.8rem', borderRadius:'10px',
+                      background:'rgba(200,50,50,0.08)', border:'1px solid rgba(200,50,50,0.3)',
+                      color:'#ff9090', fontSize:'0.78rem', fontWeight:600,
+                      cursor:'pointer', fontFamily:'var(--font-main)',
+                    }}>
+                      🗑️ حذف
+                    </button>
+                  </div>
                 </div>
               ) : (
                 // ─── زر اختيار صورة ───
@@ -352,26 +344,35 @@ export default function MenuManagerPage() {
                   background:'rgba(255,255,255,0.02)',
                   transition:'all 0.2s',
                 }}>
-                  <div style={{ fontSize:'2.2rem', marginBottom:'0.4rem' }}>📸</div>
-                  <span style={{ fontSize:'0.88rem', fontWeight:700, color:'var(--color-primary-light)', marginBottom:'0.2rem' }}>
-                    اضغط لاختيار صورة
-                  </span>
-                  <span style={{ fontSize:'0.72rem', color:'var(--text-muted)' }}>
-                    من الاستوديو أو الكاميرا
-                  </span>
+                  {uploading ? (
+                    <>
+                      <div style={{
+                        width:'36px', height:'36px', borderRadius:'50%',
+                        border:'3px solid rgba(26,107,69,0.3)',
+                        borderTopColor:'var(--color-primary)',
+                        animation:'spin 0.8s linear infinite', marginBottom:'0.5rem',
+                      }} />
+                      <span style={{ fontSize:'0.82rem', color:'var(--text-muted)' }}>جاري معالجة الصورة...</span>
+                      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize:'2.5rem', marginBottom:'0.4rem' }}>📸</div>
+                      <span style={{ fontSize:'0.88rem', fontWeight:700, color:'var(--color-primary-light)', marginBottom:'0.2rem' }}>
+                        اضغط لاختيار صورة
+                      </span>
+                      <span style={{ fontSize:'0.72rem', color:'var(--text-muted)' }}>
+                        من الاستوديو أو الكاميرا
+                      </span>
+                    </>
+                  )}
                   <input type="file" accept="image/*" onChange={handleImagePick} style={{ display:'none' }} />
                 </label>
-              )}
-
-              {uploading && !preview && (
-                <div style={{ textAlign:'center', padding:'0.5rem', color:'var(--text-muted)', fontSize:'0.78rem' }}>
-                  ⏳ جاري رفع الصورة...
-                </div>
               )}
             </div>
 
             <div style={{ display:'flex', gap:'0.6rem' }}>
-              <button onClick={() => { setEditing(null); setPreview(null) }} style={{
+              <button onClick={() => setEditing(null)} style={{
                 flex:1, padding:'0.8rem', borderRadius:'14px',
                 background:'rgba(255,255,255,0.06)', border:'1px solid var(--border-color)',
                 color:'var(--text-muted)', fontWeight:700, cursor:'pointer', fontFamily:'var(--font-main)',
@@ -385,7 +386,7 @@ export default function MenuManagerPage() {
                 fontWeight:800, fontSize:'0.95rem', cursor: uploading ? 'wait' : 'pointer', 
                 fontFamily:'var(--font-main)',
               }}>
-                {uploading ? '⏳ جاري الرفع...' : editing === 'new' ? '✅ إضافة' : '✅ حفظ التعديلات'}
+                {uploading ? '⏳ جاري المعالجة...' : editing === 'new' ? '✅ إضافة' : '✅ حفظ التعديلات'}
               </button>
             </div>
           </div>
