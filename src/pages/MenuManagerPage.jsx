@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+const API = (import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api'
 const CATEGORIES = ['مشاوي', 'رئيسية', 'مشروبات', 'مقبلات', 'حلويات', 'برغر', 'أسماك', 'دجاج', 'أخرى']
 const MENU_KEY = 'dalilak_my_menu'
 
@@ -24,17 +25,61 @@ export default function MenuManagerPage() {
   const [editing,  setEditing]  = useState(null) // null | index | 'new'
   const [form,     setForm]     = useState({ name:'', price:'', category:'مشاوي', description:'', image:'' })
   const [activeTab, setActiveTab] = useState('all')
+  const [uploading, setUploading] = useState(false)
+  const [preview,   setPreview]   = useState(null)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const openNew = () => {
     setForm({ name:'', price:'', category:'مشاوي', description:'', image:'' })
+    setPreview(null)
     setEditing('new')
   }
 
   const openEdit = (idx) => {
     setForm({ ...items[idx] })
+    setPreview(items[idx].image || null)
     setEditing(idx)
+  }
+
+  // ─── رفع الصورة من الاستوديو ───
+  const handleImagePick = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // عرض preview فوري
+    const reader = new FileReader()
+    reader.onload = (ev) => setPreview(ev.target.result)
+    reader.readAsDataURL(file)
+
+    // رفع للسيرفر
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('image', file)
+
+      const res = await fetch(`${API}/upload`, {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+
+      if (data.success) {
+        set('image', data.url)
+      } else {
+        alert('فشل رفع الصورة: ' + (data.message || 'خطأ'))
+      }
+    } catch (err) {
+      console.error('Upload error:', err)
+      alert('فشل الاتصال بالسيرفر')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const removeImage = () => {
+    set('image', '')
+    setPreview(null)
   }
 
   const handleSave = () => {
@@ -42,7 +87,7 @@ export default function MenuManagerPage() {
     const next = [...items]
     if (editing === 'new') next.push({ ...form, id: Date.now().toString() })
     else next[editing] = { ...form }
-    setItems(next); saveMenu(next); setEditing(null)
+    setItems(next); saveMenu(next); setEditing(null); setPreview(null)
   }
 
   const handleDelete = (idx) => {
@@ -208,6 +253,7 @@ export default function MenuManagerPage() {
             width:'100%', maxWidth:'480px', margin:'0 auto',
             background:'var(--bg-card)', borderRadius:'24px 24px 0 0',
             padding:'1.4rem', paddingBottom:'calc(1.4rem + env(safe-area-inset-bottom))',
+            maxHeight:'90vh', overflowY:'auto',
           }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.2rem' }}>
               <h3 style={{ fontSize:'1.1rem', fontWeight:800, color:'var(--text-primary)' }}>
@@ -241,23 +287,105 @@ export default function MenuManagerPage() {
                 style={{ ...inp, resize:'none', lineHeight:1.5 }} />
             </div>
 
+            {/* ─── منطقة رفع الصورة ─── */}
             <div style={{ marginBottom:'1rem' }}>
-              <label style={{ fontSize:'0.78rem', color:'var(--text-muted)', fontWeight:700, display:'block', marginBottom:'0.3rem' }}>رابط الصورة (اختياري)</label>
-              <input style={{ ...inp, direction:'ltr' }} value={form.image} onChange={e => set('image', e.target.value)} placeholder="https://..." />
+              <label style={{ fontSize:'0.78rem', color:'var(--text-muted)', fontWeight:700, display:'block', marginBottom:'0.3rem' }}>
+                📷 صورة الصنف
+              </label>
+
+              {preview || form.image ? (
+                // ─── عرض الصورة المختارة ───
+                <div style={{ position:'relative', borderRadius:'14px', overflow:'hidden', marginBottom:'0.5rem' }}>
+                  <img 
+                    src={preview || form.image} 
+                    alt="صورة الصنف" 
+                    style={{ 
+                      width:'100%', height:'160px', objectFit:'cover', 
+                      borderRadius:'14px', border:'1px solid var(--border-color)',
+                    }} 
+                  />
+                  {uploading && (
+                    <div style={{
+                      position:'absolute', inset:0, background:'rgba(0,0,0,0.6)',
+                      display:'flex', alignItems:'center', justifyContent:'center',
+                      borderRadius:'14px',
+                    }}>
+                      <div style={{
+                        width:'36px', height:'36px', borderRadius:'50%',
+                        border:'3px solid rgba(255,255,255,0.3)',
+                        borderTopColor:'#fff',
+                        animation:'spin 0.8s linear infinite',
+                      }} />
+                      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+                    </div>
+                  )}
+                  {!uploading && (
+                    <div style={{ 
+                      display:'flex', gap:'0.5rem', marginTop:'0.5rem',
+                    }}>
+                      <label style={{
+                        flex:1, padding:'0.5rem', borderRadius:'10px', textAlign:'center',
+                        background:'rgba(255,255,255,0.06)', border:'1px solid var(--border-color)',
+                        color:'var(--text-secondary)', fontSize:'0.78rem', fontWeight:600,
+                        cursor:'pointer', fontFamily:'var(--font-main)',
+                      }}>
+                        🔄 تغيير الصورة
+                        <input type="file" accept="image/*" onChange={handleImagePick} style={{ display:'none' }} />
+                      </label>
+                      <button onClick={removeImage} style={{
+                        padding:'0.5rem 0.8rem', borderRadius:'10px',
+                        background:'rgba(200,50,50,0.08)', border:'1px solid rgba(200,50,50,0.3)',
+                        color:'#ff9090', fontSize:'0.78rem', fontWeight:600,
+                        cursor:'pointer', fontFamily:'var(--font-main)',
+                      }}>
+                        🗑️ حذف
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // ─── زر اختيار صورة ───
+                <label style={{
+                  display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                  padding:'1.5rem', borderRadius:'14px', cursor:'pointer',
+                  border:'2px dashed var(--border-color)',
+                  background:'rgba(255,255,255,0.02)',
+                  transition:'all 0.2s',
+                }}>
+                  <div style={{ fontSize:'2.2rem', marginBottom:'0.4rem' }}>📸</div>
+                  <span style={{ fontSize:'0.88rem', fontWeight:700, color:'var(--color-primary-light)', marginBottom:'0.2rem' }}>
+                    اضغط لاختيار صورة
+                  </span>
+                  <span style={{ fontSize:'0.72rem', color:'var(--text-muted)' }}>
+                    من الاستوديو أو الكاميرا
+                  </span>
+                  <input type="file" accept="image/*" onChange={handleImagePick} style={{ display:'none' }} />
+                </label>
+              )}
+
+              {uploading && !preview && (
+                <div style={{ textAlign:'center', padding:'0.5rem', color:'var(--text-muted)', fontSize:'0.78rem' }}>
+                  ⏳ جاري رفع الصورة...
+                </div>
+              )}
             </div>
 
             <div style={{ display:'flex', gap:'0.6rem' }}>
-              <button onClick={() => setEditing(null)} style={{
+              <button onClick={() => { setEditing(null); setPreview(null) }} style={{
                 flex:1, padding:'0.8rem', borderRadius:'14px',
                 background:'rgba(255,255,255,0.06)', border:'1px solid var(--border-color)',
                 color:'var(--text-muted)', fontWeight:700, cursor:'pointer', fontFamily:'var(--font-main)',
               }}>إلغاء</button>
-              <button onClick={handleSave} style={{
+              <button onClick={handleSave} disabled={uploading} style={{
                 flex:2, padding:'0.8rem', borderRadius:'14px', border:'none',
-                background:'linear-gradient(135deg,var(--color-primary),var(--color-primary-dark))',
-                color:'#fff', fontWeight:800, fontSize:'0.95rem', cursor:'pointer', fontFamily:'var(--font-main)',
+                background: uploading 
+                  ? 'rgba(255,255,255,0.1)' 
+                  : 'linear-gradient(135deg,var(--color-primary),var(--color-primary-dark))',
+                color: uploading ? 'var(--text-muted)' : '#fff', 
+                fontWeight:800, fontSize:'0.95rem', cursor: uploading ? 'wait' : 'pointer', 
+                fontFamily:'var(--font-main)',
               }}>
-                {editing === 'new' ? '✅ إضافة' : '✅ حفظ التعديلات'}
+                {uploading ? '⏳ جاري الرفع...' : editing === 'new' ? '✅ إضافة' : '✅ حفظ التعديلات'}
               </button>
             </div>
           </div>

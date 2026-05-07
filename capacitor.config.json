@@ -6,6 +6,10 @@
     "allowMixedContent": true,
     "backgroundColor": "#0d1f17"
   },
+  "server": {
+    "url": "https://dapper-syrniki-feb1ba.netlify.app",
+    "cleartext": true
+  },
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 2000,
