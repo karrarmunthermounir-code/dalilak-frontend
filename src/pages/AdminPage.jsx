@@ -1,0 +1,660 @@
+import { useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { addPlace, IRAQ_GOVERNORATES } from '../services/api'
+import { useAuth } from '../context/AuthContext'
+
+// ──────────────────────────────────────────────
+// الثوابت
+// ──────────────────────────────────────────────
+const TYPES = [
+  { key: 'مطعم',  icon: '🍽️', color: 'rgba(26,107,69,0.2)',   border: 'rgba(26,107,69,0.5)',   text: '#4ade80' },
+  { key: 'كافيه', icon: '☕',  color: 'rgba(201,151,58,0.15)', border: 'rgba(201,151,58,0.5)',  text: '#fbbf24' },
+  { key: 'فندق',  icon: '🏨',  color: 'rgba(99,102,241,0.15)', border: 'rgba(99,102,241,0.45)', text: '#a5b4fc' },
+]
+
+const REST_FEATURES = ['واي فاي','موقف سيارات','صالة عائلية','دليفري','هواء طلق','تكييف','وجبة إفطار','مناسب للأطفال']
+const CAFE_FEATURES = ['واي فاي','هواء طلق','تكييف','قهوة مختصة','حلويات','موقف سيارات','مناسب للعمل','موسيقى']
+const HOTEL_FEATURES = ['واي فاي','مسبح','سبا','إفطار مجاني','موقف سيارات','خدمة غرف','صالة رياضة','قاعة مؤتمرات']
+const MENU_CATS = ['مشاوي','رئيسية','مشروبات','مقبلات','حلويات','برغر','أسماك','سلطات','وجبات سريعة','أخرى']
+
+const getFeatures = (type) => type === 'فندق' ? HOTEL_FEATURES : type === 'كافيه' ? CAFE_FEATURES : REST_FEATURES
+
+// ──────────────────────────────────────────────
+// أنماط
+// ──────────────────────────────────────────────
+const inp = {
+  width: '100%', padding: '0.78rem 1rem', borderRadius: '14px',
+  border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.05)',
+  color: 'var(--text-primary)', fontSize: '0.92rem', fontFamily: 'var(--font-main)',
+  outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.2s',
+}
+const cardStyle = {
+  background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+  borderRadius: '18px', padding: '1.2rem', marginBottom: '1rem',
+}
+
+// ──────────────────────────────────────────────
+// مكوّن حقل
+// ──────────────────────────────────────────────
+function Field({ label, required, error, hint, children }) {
+  return (
+    <div style={{ marginBottom: '1rem' }}>
+      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
+        {label} {required && <span style={{ color: 'var(--color-accent)' }}>*</span>}
+      </label>
+      {children}
+      {hint && <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>{hint}</p>}
+      {error && <p style={{ fontSize: '0.74rem', color: '#ff9090', marginTop: '0.3rem' }}>⚠ {error}</p>}
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────
+// مكوّن صنف المنيو (للمشتركين)
+// ──────────────────────────────────────────────
+function MenuItemRow({ item, idx, onChange, onRemove }) {
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '14px', padding: '0.9rem', marginBottom: '0.6rem', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+        <input style={inp} value={item.name} placeholder="اسم الصنف *" onChange={e => onChange(idx, 'name', e.target.value)} />
+        <input style={inp} type="number" value={item.price} placeholder="السعر (د.ع)" onChange={e => onChange(idx, 'price', e.target.value)} />
+      </div>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+        <select value={item.category} onChange={e => onChange(idx, 'category', e.target.value)}
+          style={{ ...inp, cursor: 'pointer', flex: 1 }}>
+          <option value="">التصنيف...</option>
+          {MENU_CATS.map(c => <option key={c}>{c}</option>)}
+        </select>
+        {idx > 0 && (
+          <button type="button" onClick={() => onRemove(idx)} style={{
+            background: 'rgba(200,50,50,0.15)', border: '1px solid rgba(200,50,50,0.3)',
+            color: '#ff9090', borderRadius: '12px', padding: '0 0.8rem',
+            cursor: 'pointer', flexShrink: 0,
+          }}>✕</button>
+        )}
+      </div>
+      <input style={{ ...inp, fontSize: '0.82rem' }} value={item.description}
+        placeholder="وصف اختياري..." onChange={e => onChange(idx, 'description', e.target.value)} />
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────
+// الصفحة الرئيسية
+// ──────────────────────────────────────────────
+const empty = {
+  name: '', type: 'مطعم', governorate: 'بغداد', address: '',
+  description: '', phone: '', openHours: '9:00 ص - 11:00 م',
+  features: [], mapLink: '', images: '',
+  menuImage: '', // للمجاني: صورة منيو واحدة
+  menu: [{ name: '', price: '', category: '', description: '' }],
+}
+
+export default function AdminPage() {
+  const navigate = useNavigate()
+  const { isLoggedIn, isSubscribed, subscriptionTier } = useAuth()
+
+  const [step,    setStep]    = useState(0) // 0=اختيار النوع 1=المعلومات 2=المنيو 3=نجاح
+  const [form,    setForm]    = useState(empty)
+  const [errors,  setErrors]  = useState({})
+  const [loading, setLoading] = useState(false)
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const toggleFeature = (feat) =>
+    setForm(f => ({ ...f, features: f.features.includes(feat) ? f.features.filter(x => x !== feat) : [...f.features, feat] }))
+
+  const changeMenu = (idx, k, v) =>
+    setForm(f => { const m = [...f.menu]; m[idx] = { ...m[idx], [k]: v }; return { ...f, menu: m } })
+
+  const addItem   = () => setForm(f => ({ ...f, menu: [...f.menu, { name: '', price: '', category: '', description: '' }] }))
+  const removeItem = (i) => setForm(f => ({ ...f, menu: f.menu.filter((_, x) => x !== i) }))
+
+  // ── التحقق ──
+  const validate = () => {
+    const e = {}
+    if (!form.name.trim())        e.name        = 'اسم المكان مطلوب'
+    if (!form.description.trim()) e.description = 'الوصف مطلوب'
+    if (!form.address.trim())     e.address     = 'العنوان مطلوب'
+    setErrors(e)
+    return !Object.keys(e).length
+  }
+
+  // ── الإرسال ──
+  const handleSubmit = async () => {
+    if (!validate()) { setStep(1); return }
+    setLoading(true)
+    try {
+      const images = form.images
+        ? form.images.split('\n').map(s => s.trim()).filter(Boolean)
+        : []
+      if (form.menuImage?.trim()) images.push(form.menuImage.trim())
+      if (!images.length) images.push('https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800')
+
+      const menuArr = isSubscribed
+        ? form.menu.filter(m => m.name.trim()).map(m => ({ ...m, price: Number(m.price) || 0 }))
+        : (form.menuImage ? [{ name: 'منيو الصور', menuImage: form.menuImage, category: 'منيو' }] : [])
+
+      await addPlace({
+        ...form,
+        images,
+        menu: menuArr,
+        area: form.address,
+        ownerId: 'user_local',
+        isFeatured: subscriptionTier === 'premium',
+      })
+      setStep(3)
+    } catch {
+      alert('حدث خطأ. جرب مرة أخرى.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ════════════════════════════════════════════
+  // شريط التقدم المشترك
+  // ════════════════════════════════════════════
+  const StepBar = ({ current }) => {
+    if (current === 0 || current === 3) return null
+    return (
+      <div style={{ display: 'flex', gap: '0.3rem', padding: '0 1rem' }}>
+        {['المعلومات', form.type === 'فندق' ? (isSubscribed ? 'صور الغرف' : 'صورة الغرف') : (isSubscribed ? 'المنيو' : 'صورة المنيو'), 'نشر'].map((label, i) => {
+          const n = i + 1
+          const active = current === n
+          const done   = current > n
+          return (
+            <button key={n} onClick={() => n < current && setStep(n)} style={{
+              flex: 1, padding: '0.45rem 0', borderRadius: '10px', border: 'none',
+              fontFamily: 'var(--font-main)', fontWeight: 700, fontSize: '0.72rem', cursor: n < current ? 'pointer' : 'default',
+              background: active
+                ? 'linear-gradient(135deg,var(--color-accent),var(--color-accent-dark))'
+                : done ? 'rgba(26,107,69,0.25)' : 'rgba(255,255,255,0.06)',
+              color: active ? '#000' : done ? 'var(--color-primary-light)' : 'var(--text-muted)',
+            }}>
+              {done ? '✓' : `${n}.`} {label}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
+  // ════════════════════════════════════════════
+  // شاشة: يجب تسجيل الدخول
+  // ════════════════════════════════════════════
+  if (!isLoggedIn) return (
+    <div style={{ minHeight:'100vh', background:'var(--bg-dark)', display:'flex', alignItems:'center', justifyContent:'center', padding:'2rem' }}>
+      <div style={{ textAlign:'center', maxWidth:'320px' }}>
+        <div style={{ fontSize:'3.5rem', marginBottom:'1rem' }}>🔒</div>
+        <h2 style={{ fontSize:'1.3rem', fontWeight:800, color:'var(--text-primary)', marginBottom:'0.5rem' }}>سجّل دخولك أولاً</h2>
+        <p style={{ color:'var(--text-muted)', fontSize:'0.88rem', marginBottom:'1.5rem', lineHeight:1.7 }}>
+          لإضافة مكانك لدليلك، تحتاج حساب مجاني فقط 👇
+        </p>
+        <button onClick={() => navigate('/auth', { state:{ from:'/admin' } })} style={{
+          width:'100%', padding:'0.85rem', borderRadius:'14px', border:'none',
+          background:'linear-gradient(135deg,var(--color-primary),var(--color-primary-dark))',
+          color:'#fff', fontWeight:700, fontSize:'1rem', fontFamily:'var(--font-main)', cursor:'pointer',
+        }}>🔑 تسجيل الدخول / إنشاء حساب</button>
+        <button onClick={() => navigate('/')} style={{ marginTop:'0.8rem', background:'none', border:'none', color:'var(--text-muted)', fontSize:'0.82rem', cursor:'pointer', fontFamily:'var(--font-main)' }}>
+          ← الرئيسية
+        </button>
+      </div>
+    </div>
+  )
+
+  // ════════════════════════════════════════════
+  // شاشة النجاح
+  // ════════════════════════════════════════════
+  if (step === 3) return (
+    <div style={{ minHeight:'100vh', background:'var(--bg-dark)', display:'flex', alignItems:'center', justifyContent:'center', padding:'2rem' }}>
+      <div style={{ textAlign:'center', maxWidth:'340px' }}>
+        <div style={{ fontSize:'4rem', marginBottom:'1rem', animation:'pulse 1s ease infinite' }}>🎉</div>
+        <h2 style={{ fontSize:'1.4rem', fontWeight:900, color:'var(--color-primary-light)', marginBottom:'0.5rem' }}>
+          تمت الإضافة بنجاح!
+        </h2>
+        <p style={{ color:'var(--text-muted)', fontSize:'0.88rem', lineHeight:1.7, marginBottom:'1.5rem' }}>
+          مكانك <strong style={{ color:'var(--text-primary)' }}>{form.name}</strong> أصبح في دليلك الآن ✅
+        </p>
+
+        {/* ترويج الاشتراك للمجانيين */}
+        {!isSubscribed && (
+          <div style={{
+            background:'rgba(201,151,58,0.1)', border:'1px solid rgba(201,151,58,0.3)',
+            borderRadius:'16px', padding:'1rem', marginBottom:'1.2rem', textAlign:'right',
+          }}>
+            <p style={{ fontSize:'0.85rem', fontWeight:700, color:'var(--color-accent-light)', marginBottom:'0.4rem' }}>
+              💎 فعّل اشتراكك للحصول على:
+            </p>
+            {['منيو كامل مع أسعار وصور','إحصائيات المشاهدات والاتصالات','ظهور مميز في الأعلى','إضافة عروض وخصومات'].map((f,i) => (
+              <div key={i} style={{ fontSize:'0.78rem', color:'var(--text-secondary)', marginBottom:'0.25rem' }}>
+                ✓ {f}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem' }}>
+          <button onClick={() => navigate('/')} style={{
+            padding:'0.85rem', borderRadius:'14px', border:'none',
+            background:'linear-gradient(135deg,var(--color-primary),var(--color-primary-dark))',
+            color:'#fff', fontWeight:800, fontSize:'0.95rem', fontFamily:'var(--font-main)', cursor:'pointer',
+          }}>🗺️ شوف مكانك في الدليل</button>
+          {!isSubscribed && (
+            <button onClick={() => navigate('/subscriptions')} style={{
+              padding:'0.85rem', borderRadius:'14px', border:'none',
+              background:'linear-gradient(135deg,var(--color-accent),var(--color-accent-dark))',
+              color:'#000', fontWeight:800, fontSize:'0.95rem', fontFamily:'var(--font-main)', cursor:'pointer',
+            }}>💎 اشترك وفعّل المميزات</button>
+          )}
+          <button onClick={() => { setStep(0); setForm(empty) }} style={{
+            padding:'0.7rem', borderRadius:'14px',
+            background:'rgba(255,255,255,0.06)', border:'1px solid var(--border-color)',
+            color:'var(--text-muted)', fontSize:'0.85rem', cursor:'pointer', fontFamily:'var(--font-main)',
+          }}>➕ إضافة مكان آخر</button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ════════════════════════════════════════════
+  // شاشة: اختيار النوع (الخطوة 0)
+  // ════════════════════════════════════════════
+  if (step === 0) return (
+    <main style={{ background:'var(--bg-dark)', minHeight:'100vh' }}>
+      <header style={{
+        background:'linear-gradient(180deg,var(--color-primary-dark),var(--bg-dark))',
+        padding:'1.4rem 1rem 1.2rem',
+        borderBottom:'1px solid var(--border-color)',
+      }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.7rem' }}>
+          <button onClick={() => navigate('/')} style={{
+            background:'rgba(255,255,255,0.08)', border:'none', borderRadius:'12px',
+            padding:'0.5rem 0.7rem', color:'var(--text-primary)', cursor:'pointer',
+          }}>◀</button>
+          <div>
+            <h1 style={{ fontSize:'1.3rem', fontWeight:900, color:'var(--text-primary)' }}>➕ إضافة مكان</h1>
+            <p style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginTop:'0.1rem' }}>مجاناً — لا يلزم اشتراك</p>
+          </div>
+        </div>
+      </header>
+
+      <div style={{ padding:'1.5rem 1rem', paddingBottom:'5rem' }}>
+        {/* بنر مجاني */}
+        <div style={{
+          background:'linear-gradient(135deg,rgba(26,107,69,0.15),rgba(26,107,69,0.05))',
+          border:'1px solid rgba(26,107,69,0.3)', borderRadius:'18px',
+          padding:'1.1rem', marginBottom:'1.5rem', textAlign:'center',
+        }}>
+          <div style={{ fontSize:'2rem', marginBottom:'0.3rem' }}>🎯</div>
+          <p style={{ fontSize:'0.9rem', fontWeight:700, color:'var(--color-primary-light)', marginBottom:'0.3rem' }}>
+            أي شخص يمكنه إضافة مكانه مجاناً!
+          </p>
+          <p style={{ fontSize:'0.78rem', color:'var(--text-muted)', lineHeight:1.6 }}>
+            أضف مطعمك أو كافيهك أو فندقك في أقل من دقيقتين
+          </p>
+        </div>
+
+        <h2 style={{ fontSize:'1rem', fontWeight:700, color:'var(--text-secondary)', marginBottom:'1rem', textAlign:'center' }}>
+          اختر نوع المكان
+        </h2>
+
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.8rem' }}>
+          {TYPES.map(t => (
+            <button key={t.key} onClick={() => { set('type', t.key); set('features', []); setStep(1) }} style={{
+              display:'flex', alignItems:'center', gap:'1.2rem',
+              padding:'1.2rem', borderRadius:'18px', cursor:'pointer',
+              background:t.color, border:`2px solid ${t.border}`,
+              fontFamily:'var(--font-main)', textAlign:'right',
+              transition:'transform 0.15s, opacity 0.15s',
+            }}
+            onTouchStart={e => e.currentTarget.style.transform='scale(0.97)'}
+            onTouchEnd={e => e.currentTarget.style.transform='scale(1)'}
+            >
+              <span style={{ fontSize:'2.5rem', flexShrink:0 }}>{t.icon}</span>
+              <div>
+                <div style={{ fontSize:'1.15rem', fontWeight:800, color:t.text }}>{t.key}</div>
+                <div style={{ fontSize:'0.78rem', color:'var(--text-muted)', marginTop:'0.15rem' }}>
+                  {t.key==='مطعم'  && 'مطعم، مشاوي، أسماك، مأكولات...'}
+                  {t.key==='كافيه' && 'كافيه، قهوة، حلويات، مشروبات...'}
+                  {t.key==='فندق'  && 'فندق، شاليه، استراحة، سكن...'}
+                </div>
+              </div>
+              <span style={{ marginRight:'auto', color:'var(--text-muted)', fontSize:'1.1rem' }}>◀</span>
+            </button>
+          ))}
+        </div>
+
+        {/* مقارنة مجاني/مشترك */}
+        <div style={{ marginTop:'1.5rem', ...cardStyle }}>
+          <h3 style={{ fontSize:'0.88rem', fontWeight:700, color:'var(--text-secondary)', marginBottom:'0.8rem' }}>
+            ما الفرق بين المجاني والمشترك؟
+          </h3>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.5rem', fontSize:'0.76rem' }}>
+            <div>
+              <div style={{ fontWeight:800, color:'var(--text-muted)', marginBottom:'0.4rem' }}>🆓 مجاني</div>
+              {['إضافة مكانك','عنوان + وصف','صورة واحدة (منيو/غرف)','ظهور في البحث'].map((f,i) => (
+                <div key={i} style={{ color:'var(--text-secondary)', marginBottom:'0.2rem' }}>✓ {f}</div>
+              ))}
+            </div>
+            <div>
+              <div style={{ fontWeight:800, color:'var(--color-accent-light)', marginBottom:'0.4rem' }}>💎 مشترك</div>
+              {['كل مميزات المجاني','منيو / صور غرف كاملة','إحصائيات الزوار','ظهور مميز في الأعلى'].map((f,i) => (
+                <div key={i} style={{ color:'var(--color-accent-light)', marginBottom:'0.2rem' }}>⭐ {f}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  )
+
+  // ════════════════════════════════════════════
+  // خطوة 1: المعلومات الأساسية
+  // ════════════════════════════════════════════
+  if (step === 1) return (
+    <main style={{ background:'var(--bg-dark)', minHeight:'100vh' }}>
+      <header style={{
+        background:'linear-gradient(180deg,var(--color-primary-dark),var(--bg-dark))',
+        padding:'1rem', position:'sticky', top:0, zIndex:100,
+        borderBottom:'1px solid var(--border-color)', backdropFilter:'blur(12px)',
+      }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.7rem', marginBottom:'0.8rem' }}>
+          <button onClick={() => setStep(0)} style={{
+            background:'rgba(255,255,255,0.08)', border:'none', borderRadius:'12px',
+            padding:'0.5rem 0.7rem', color:'var(--text-primary)', cursor:'pointer',
+          }}>◀</button>
+          <div>
+            <h1 style={{ fontSize:'1.1rem', fontWeight:800, color:'var(--text-primary)' }}>
+              {TYPES.find(t=>t.key===form.type)?.icon} إضافة {form.type}
+            </h1>
+            <p style={{ fontSize:'0.7rem', color:'var(--text-muted)' }}>الخطوة 1 من 2</p>
+          </div>
+        </div>
+        <StepBar current={1} />
+      </header>
+
+      <div style={{ padding:'1rem', paddingBottom:'5rem' }}>
+
+        <Field label="اسم المكان" required error={errors.name}>
+          <input style={inp} value={form.name} onChange={e => set('name', e.target.value)}
+            placeholder={`اسم ${form.type} (مثال: ${form.type==='مطعم'?'مطعم السندباد':form.type==='كافيه'?'كافيه الأمل':'فندق النخيل'})`} />
+        </Field>
+
+        <Field label="المحافظة" required>
+          <select value={form.governorate} onChange={e => set('governorate', e.target.value)}
+            style={{ ...inp, cursor:'pointer' }}>
+            {IRAQ_GOVERNORATES.filter(g => g !== 'الكل').map(g => <option key={g}>{g}</option>)}
+          </select>
+        </Field>
+
+        <Field label="العنوان التفصيلي" required error={errors.address}
+          hint="مثال: شارع المنصور، بجانب بنك الرافدين">
+          <input style={inp} value={form.address} onChange={e => set('address', e.target.value)}
+            placeholder="الحي / الشارع / قرب..." />
+        </Field>
+
+        <Field label="وصف المكان" required error={errors.description}
+          hint="اكتب وصفاً يشجع الزوار على الزيارة">
+          <textarea style={{ ...inp, resize:'none', minHeight:'100px', lineHeight:1.6 }}
+            value={form.description} onChange={e => set('description', e.target.value)}
+            placeholder="ماذا يميز مكانك؟ ما نوع الطعام؟ ما الأجواء؟..." />
+        </Field>
+
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.7rem' }}>
+          <Field label="رقم الهاتف">
+            <input style={inp} value={form.phone} onChange={e => set('phone', e.target.value)}
+              placeholder="07xxxxxxxxx" inputMode="tel" />
+          </Field>
+          <Field label="ساعات العمل">
+            <input style={inp} value={form.openHours} onChange={e => set('openHours', e.target.value)}
+              placeholder="9 ص - 12 م" />
+          </Field>
+        </div>
+
+        <Field label="رابط Google Maps" hint="افتح Google Maps → ابحث عن مكانك → شارك الرابط">
+          <input style={{ ...inp, direction:'ltr' }} value={form.mapLink}
+            onChange={e => set('mapLink', e.target.value)} placeholder="https://maps.google.com/..." />
+        </Field>
+
+        <Field label="صور المكان" hint="ارفع الصور على Imgur أو أي موقع صور وانسخ الروابط (رابط في كل سطر)">
+          <textarea style={{ ...inp, resize:'none', minHeight:'80px', direction:'ltr', lineHeight:1.7 }}
+            value={form.images} onChange={e => set('images', e.target.value)}
+            placeholder={"https://example.com/photo1.jpg\nhttps://example.com/photo2.jpg"} />
+        </Field>
+
+        {/* المميزات */}
+        <Field label={`مميزات ${form.type==='فندق'?'الفندق':'المكان'}`}>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem' }}>
+            {getFeatures(form.type).map(feat => (
+              <button type="button" key={feat} onClick={() => toggleFeature(feat)} style={{
+                padding:'0.4rem 0.85rem', borderRadius:'99px', border:'none',
+                fontFamily:'var(--font-main)', fontWeight:600, fontSize:'0.8rem', cursor:'pointer',
+                background: form.features.includes(feat) ? 'var(--color-primary)' : 'rgba(255,255,255,0.06)',
+                color:      form.features.includes(feat) ? '#fff' : 'var(--text-muted)',
+                transition:'all 0.15s',
+              }}>
+                {form.features.includes(feat) ? '✓ ' : ''}{feat}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        <button type="button" onClick={() => { if (validate()) setStep(2) }} style={{
+          width:'100%', padding:'0.9rem', marginTop:'0.5rem', borderRadius:'14px', border:'none',
+          background:'linear-gradient(135deg,var(--color-primary),var(--color-primary-dark))',
+          color:'#fff', fontWeight:800, fontSize:'1rem', fontFamily:'var(--font-main)', cursor:'pointer',
+        }}>
+          التالي — {form.type === 'فندق' ? (isSubscribed ? 'صور الغرف' : 'صورة الغرف') : (isSubscribed ? 'المنيو' : 'صورة المنيو')} ←
+        </button>
+      </div>
+    </main>
+  )
+
+  // ════════════════════════════════════════════
+  // خطوة 2: المنيو
+  // ════════════════════════════════════════════
+  if (step === 2) return (
+    <main style={{ background:'var(--bg-dark)', minHeight:'100vh' }}>
+      <header style={{
+        background:'linear-gradient(180deg,var(--color-primary-dark),var(--bg-dark))',
+        padding:'1rem', position:'sticky', top:0, zIndex:100,
+        borderBottom:'1px solid var(--border-color)', backdropFilter:'blur(12px)',
+      }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.7rem', marginBottom:'0.8rem' }}>
+          <button onClick={() => setStep(1)} style={{
+            background:'rgba(255,255,255,0.08)', border:'none', borderRadius:'12px',
+            padding:'0.5rem 0.7rem', color:'var(--text-primary)', cursor:'pointer',
+          }}>◀</button>
+          <div>
+            <h1 style={{ fontSize:'1.1rem', fontWeight:800, color:'var(--text-primary)' }}>
+              {form.type === 'فندق'
+                ? (isSubscribed ? '🏨 صور الغرف والمميزات' : '📷 صورة الغرف')
+                : (isSubscribed ? '🍴 قائمة الطعام' : '📷 صورة المنيو')}
+            </h1>
+            <p style={{ fontSize:'0.7rem', color:'var(--text-muted)' }}>الخطوة 2 من 2</p>
+          </div>
+        </div>
+        <StepBar current={2} />
+      </header>
+
+      <div style={{ padding:'1rem', paddingBottom:'5rem' }}>
+
+        {/* ─── مجاني: صورة واحدة (منيو أو غرف حسب النوع) ─── */}
+        {!isSubscribed && (
+          <>
+            <div style={{
+              background:'rgba(201,151,58,0.08)', border:'1px solid rgba(201,151,58,0.2)',
+              borderRadius:'16px', padding:'1rem', marginBottom:'1.2rem',
+            }}>
+              <p style={{ fontSize:'0.85rem', fontWeight:700, color:'var(--color-accent-light)', marginBottom:'0.3rem' }}>
+                📋 خطتك الحالية: مجاني
+              </p>
+              <p style={{ fontSize:'0.78rem', color:'var(--text-muted)', lineHeight:1.6 }}>
+                {form.type === 'فندق'
+                  ? 'يمكنك إضافة صورة واحدة للغرف أو المميزات. للحصول على معرض صور كامل مع وصف كل غرفة وسعرها، اشترك الآن.'
+                  : 'يمكنك إضافة صورة واحدة لقائمة طعامك. للحصول على منيو كامل مع الأسعار والأصناف، اشترك الآن.'}
+              </p>
+              <button onClick={() => navigate('/subscriptions')} style={{
+                marginTop:'0.7rem', padding:'0.5rem 1rem', borderRadius:'10px', border:'none',
+                background:'linear-gradient(135deg,var(--color-accent),var(--color-accent-dark))',
+                color:'#000', fontWeight:800, fontSize:'0.8rem', cursor:'pointer', fontFamily:'var(--font-main)',
+              }}>💎 ترقية — من $20/شهر</button>
+            </div>
+
+            <Field
+              label={form.type === 'فندق' ? 'صورة الغرف أو المميزات' : 'صورة المنيو'}
+              hint={form.type === 'فندق'
+                ? 'ارفع صورة للغرف أو مرافق الفندق على Imgur وانسخ الرابط هنا'
+                : 'ارفع صورة قائمتك على Imgur أو أي موقع وانسخ الرابط هنا'}
+            >
+              <input style={{ ...inp, direction:'ltr' }} value={form.menuImage}
+                onChange={e => set('menuImage', e.target.value)}
+                placeholder={form.type === 'فندق' ? 'https://imgur.com/hotel-room.jpg' : 'https://imgur.com/your-menu.jpg'} />
+              {form.menuImage && (
+                <div style={{ marginTop:'0.7rem', borderRadius:'12px', overflow:'hidden', maxHeight:'240px' }}>
+                  <img src={form.menuImage}
+                    alt={form.type === 'فندق' ? 'صورة الغرف' : 'صورة المنيو'}
+                    style={{ width:'100%', objectFit:'cover' }}
+                    onError={e => { e.target.style.display='none' }} />
+                </div>
+              )}
+            </Field>
+          </>
+        )}
+
+        {/* ─── مشترك: منيو كامل (مطعم/كافيه) أو صور غرف (فندق) ─── */}
+        {isSubscribed && (
+          <>
+            <div style={{
+              background:'rgba(26,107,69,0.1)', border:'1px solid rgba(26,107,69,0.25)',
+              borderRadius:'16px', padding:'0.9rem 1rem', marginBottom:'1.2rem',
+              display:'flex', alignItems:'center', gap:'0.7rem',
+            }}>
+              <span style={{ fontSize:'1.3rem' }}>{form.type === 'فندق' ? '🏨' : '⭐'}</span>
+              <div>
+                <p style={{ fontSize:'0.85rem', fontWeight:700, color:'var(--color-primary-light)' }}>
+                  {form.type === 'فندق' ? 'صور الغرف والمميزات مفعّلة' : 'منيو كامل مفعّل'}
+                </p>
+                <p style={{ fontSize:'0.75rem', color:'var(--text-muted)' }}>
+                  {form.type === 'فندق' ? 'أضف صور وأوصاف الغرف وأسعارها' : 'أضف أصنافك مع الأسعار والتصنيفات'}
+                </p>
+              </div>
+            </div>
+
+            {/* ─── فندق: صور الغرف ─── */}
+            {form.type === 'فندق' ? (
+              <>
+                <Field
+                  label="صور الغرف والمميزات (رابط لكل صورة في سطر)"
+                  hint="ارفع الصور على Imgur وأضف رابط كل صورة في سطر منفصل"
+                >
+                  <textarea
+                    style={{ ...inp, resize:'none', minHeight:'90px', direction:'ltr', lineHeight:1.7 }}
+                    value={form.menuImage}
+                    onChange={e => set('menuImage', e.target.value)}
+                    placeholder={'https://imgur.com/room1.jpg\nhttps://imgur.com/pool.jpg\nhttps://imgur.com/lobby.jpg'}
+                  />
+                </Field>
+
+                <p style={{ fontSize:'0.8rem', fontWeight:700, color:'var(--text-secondary)', marginBottom:'0.7rem', marginTop:'0.3rem' }}>
+                  🛏️ أنواع الغرف وأسعارها
+                </p>
+                {form.menu.map((item, idx) => (
+                  <div key={idx} style={{
+                    background:'rgba(99,102,241,0.06)', border:'1px solid rgba(99,102,241,0.18)',
+                    borderRadius:'14px', padding:'0.9rem', marginBottom:'0.6rem',
+                  }}>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.5rem', marginBottom:'0.5rem' }}>
+                      <input style={inp} value={item.name} placeholder="نوع الغرفة (مثال: سويت)" onChange={e => changeMenu(idx,'name',e.target.value)} />
+                      <input style={inp} type="number" value={item.price} placeholder="السعر/ليلة (د.ع)" onChange={e => changeMenu(idx,'price',e.target.value)} />
+                    </div>
+                    <div style={{ display:'flex', gap:'0.5rem' }}>
+                      <input style={{ ...inp, flex:1 }} value={item.description} placeholder="وصف الغرفة (سرير كينج، إطلالة، ...)" onChange={e => changeMenu(idx,'description',e.target.value)} />
+                      {idx > 0 && (
+                        <button type="button" onClick={() => removeItem(idx)} style={{
+                          background:'rgba(200,50,50,0.15)', border:'1px solid rgba(200,50,50,0.3)',
+                          color:'#ff9090', borderRadius:'12px', padding:'0 0.8rem',
+                          cursor:'pointer', flexShrink:0,
+                        }}>✕</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <button type="button" onClick={addItem} style={{
+                  width:'100%', padding:'0.7rem', marginBottom:'1rem',
+                  borderRadius:'14px', cursor:'pointer', fontFamily:'var(--font-main)',
+                  fontWeight:600, fontSize:'0.88rem',
+                  background:'rgba(99,102,241,0.08)', border:'1px dashed rgba(99,102,241,0.4)',
+                  color:'#a5b4fc',
+                }}>
+                  ＋ إضافة نوع غرفة آخر
+                </button>
+              </>
+            ) : (
+              /* ─── مطعم/كافيه: منيو كامل ─── */
+              <>
+                {form.menu.map((item, idx) => (
+                  <MenuItemRow key={idx} item={item} idx={idx} onChange={changeMenu} onRemove={removeItem} />
+                ))}
+                <button type="button" onClick={addItem} style={{
+                  width:'100%', padding:'0.7rem', marginBottom:'1.2rem',
+                  borderRadius:'14px', cursor:'pointer', fontFamily:'var(--font-main)',
+                  fontWeight:600, fontSize:'0.88rem',
+                  background:'rgba(26,107,69,0.1)', border:'1px dashed var(--color-primary)',
+                  color:'var(--color-primary-light)',
+                }}>
+                  ＋ إضافة صنف آخر
+                </button>
+                <Field label="صورة إضافية للمنيو (اختياري)">
+                  <input style={{ ...inp, direction:'ltr' }} value={form.menuImage}
+                    onChange={e => set('menuImage', e.target.value)}
+                    placeholder="https://..." />
+                </Field>
+              </>
+            )}
+          </>
+        )}
+
+        {/* ملخص */}
+        <div style={{ ...cardStyle, marginBottom:'1rem' }}>
+          <h4 style={{ fontSize:'0.82rem', fontWeight:700, color:'var(--text-muted)', marginBottom:'0.7rem' }}>📋 ملخص ما ستنشره</h4>
+          <div style={{ display:'grid', gridTemplateColumns:'auto 1fr', gap:'0.3rem 0.8rem', fontSize:'0.82rem' }}>
+            <span style={{ color:'var(--text-muted)' }}>النوع:</span>
+            <span style={{ color:'var(--text-primary)', fontWeight:600 }}>{form.type}</span>
+            <span style={{ color:'var(--text-muted)' }}>الاسم:</span>
+            <span style={{ color:'var(--text-primary)', fontWeight:600 }}>{form.name || '—'}</span>
+            <span style={{ color:'var(--text-muted)' }}>المحافظة:</span>
+            <span style={{ color:'var(--text-primary)', fontWeight:600 }}>{form.governorate}</span>
+            {isSubscribed && form.type !== 'فندق' && (
+              <>
+                <span style={{ color:'var(--text-muted)' }}>الأصناف:</span>
+                <span style={{ color:'var(--text-primary)', fontWeight:600 }}>{form.menu.filter(m=>m.name.trim()).length} صنف</span>
+              </>
+            )}
+            {isSubscribed && form.type === 'فندق' && (
+              <>
+                <span style={{ color:'var(--text-muted)' }}>أنواع الغرف:</span>
+                <span style={{ color:'var(--text-primary)', fontWeight:600 }}>{form.menu.filter(m=>m.name.trim()).length} غرفة</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <button type="button" onClick={handleSubmit} disabled={loading} style={{
+          width:'100%', padding:'0.95rem', borderRadius:'14px', border:'none',
+          background:'linear-gradient(135deg,var(--color-accent),var(--color-accent-dark))',
+          color:'#000', fontWeight:900, fontSize:'1.05rem', fontFamily:'var(--font-main)', cursor:'pointer',
+          boxShadow:'0 6px 24px rgba(201,151,58,0.35)', opacity: loading ? 0.7 : 1,
+        }}>
+          {loading ? '⏳ جاري النشر...' : '🚀 نشر المكان الآن'}
+        </button>
+
+        <p style={{ textAlign:'center', fontSize:'0.72rem', color:'var(--text-muted)', marginTop:'0.7rem', lineHeight:1.6 }}>
+          بالنشر توافق على شروط الاستخدام — مكانك سيظهر فور النشر
+        </p>
+      </div>
+    </main>
+  )
+
+  return null
+}
