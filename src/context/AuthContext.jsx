@@ -197,19 +197,35 @@ export function AuthProvider({ children }) {
   }, [])
 
   const subscribe = useCallback(async (planId, planName) => {
+    // 1. تفعيل محلي فوري (يعمل حتى لو السيرفر نايم)
+    const DURATIONS = { free_trial: 30, monthly_pro: 30, pro: 30, premium: 365, yearly: 365 }
+    const days = DURATIONS[planId] || 30
+    const now = new Date()
+    const expiresAt = new Date(now.getTime() + days * 864e5)
+    const localSub = {
+      planId, planName, status: 'active',
+      activatedAt: now.toISOString(), expiresAt: expiresAt.toISOString(),
+      active: true, tier: 'premium', daysLeft: days,
+    }
+    setSubscription(localSub)
+    const cached = getCachedUser()
+    if (cached) setCachedUser({ ...cached, subscription: localSub })
+
+    // 2. محاولة المزامنة مع السيرفر (بالخلفية)
     try {
       const sub = await activateSubscription(planId, planName)
-      const active = isSubActive(sub)
-      const fullSub = { ...sub, active, tier: active ? calcTier(sub) : 'free' }
-      setSubscription(fullSub)
-      // تحديث الـ cache
-      const cached = getCachedUser()
-      if (cached) setCachedUser({ ...cached, subscription: fullSub })
-      return fullSub
+      if (sub) {
+        const active = isSubActive(sub)
+        const fullSub = { ...sub, active, tier: active ? calcTier(sub) : 'free' }
+        setSubscription(fullSub)
+        if (cached) setCachedUser({ ...cached, subscription: fullSub })
+        return fullSub
+      }
     } catch (err) {
-      console.error('subscribe error:', err)
-      return null
+      console.warn('subscribe sync error (using local):', err)
     }
+    
+    return localSub
   }, [])
 
   const refreshSubscription = useCallback(async () => {

@@ -266,11 +266,15 @@ export default function SubscriptionsPage() {
   const [selectedPlan, setSelectedPlan] = useState(null)
   const [showModal,    setShowModal]    = useState(false)
 
-  const handleSelect = (plan) => {
+  const [activating, setActivating] = useState(false)
+
+  const handleSelect = async (plan) => {
     if (!isLoggedIn) { navigate('/auth', { state:{ from:'/subscriptions' } }); return }
     if (plan.id === 'free_trial') {
       // تفعيل التجربة المجانية مباشرة (30 يوم)
-      subscribe('free_trial', 'تجربة مجانية')
+      setActivating(true)
+      await subscribe('free_trial', 'تجربة مجانية')
+      setActivating(false)
       navigate('/dashboard')
       return
     }
