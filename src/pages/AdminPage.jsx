@@ -1,7 +1,28 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { addPlace, IRAQ_GOVERNORATES } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+
+// ─── ضغط الصورة قبل الحفظ ───
+const compressImage = (file, maxWidth = 800, quality = 0.7) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let w = img.width, h = img.height
+        if (w > maxWidth) { h = (maxWidth / w) * h; w = maxWidth }
+        canvas.width = w; canvas.height = h
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
 
 // ──────────────────────────────────────────────
 // الثوابت
@@ -86,6 +107,7 @@ const empty = {
   name: '', type: 'مطعم', governorate: 'بغداد', address: '',
   description: '', phone: '', openHours: '9:00 ص - 11:00 م',
   features: [], mapLink: '', images: '',
+  imageFiles: [], // صور المكان المضغوطة
   menuImage: '', // للمجاني: صورة منيو واحدة
   menu: [{ name: '', price: '', category: '', description: '' }],
 }
@@ -125,9 +147,9 @@ export default function AdminPage() {
     if (!validate()) { setStep(1); return }
     setLoading(true)
     try {
-      const images = form.images
-        ? form.images.split('\n').map(s => s.trim()).filter(Boolean)
-        : []
+      const images = form.imageFiles.length > 0
+        ? [...form.imageFiles]
+        : (form.images ? form.images.split('\n').map(s => s.trim()).filter(Boolean) : [])
       if (form.menuImage?.trim()) images.push(form.menuImage.trim())
       if (!images.length) images.push('https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800')
 
@@ -416,10 +438,41 @@ export default function AdminPage() {
             onChange={e => set('mapLink', e.target.value)} placeholder="https://maps.google.com/..." />
         </Field>
 
-        <Field label="صور المكان" hint="ارفع الصور على Imgur أو أي موقع صور وانسخ الروابط (رابط في كل سطر)">
-          <textarea style={{ ...inp, resize:'none', minHeight:'80px', direction:'ltr', lineHeight:1.7 }}
-            value={form.images} onChange={e => set('images', e.target.value)}
-            placeholder={"https://example.com/photo1.jpg\nhttps://example.com/photo2.jpg"} />
+        <Field label="صور المكان" hint="اختر صور من الاستوديو أو الكاميرا">
+          {/* عرض الصور المختارة */}
+          {form.imageFiles.length > 0 && (
+            <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', marginBottom:'0.6rem' }}>
+              {form.imageFiles.map((img, i) => (
+                <div key={i} style={{ position:'relative', width:'80px', height:'80px', borderRadius:'12px', overflow:'hidden' }}>
+                  <img src={img} alt={`صورة ${i+1}`} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                  <button onClick={() => setForm(f => ({ ...f, imageFiles: f.imageFiles.filter((_,x) => x !== i) }))} style={{
+                    position:'absolute', top:'2px', right:'2px', background:'rgba(0,0,0,0.7)',
+                    border:'none', borderRadius:'50%', width:'22px', height:'22px',
+                    color:'#ff9090', fontSize:'0.7rem', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+                  }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <label style={{
+            display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+            padding:'1.2rem', borderRadius:'14px', cursor:'pointer',
+            border:'2px dashed var(--border-color)', background:'rgba(255,255,255,0.02)',
+          }}>
+            <div style={{ fontSize:'2rem', marginBottom:'0.3rem' }}>📸</div>
+            <span style={{ fontSize:'0.82rem', fontWeight:700, color:'var(--color-primary-light)' }}>
+              {form.imageFiles.length > 0 ? 'إضافة صورة أخرى' : 'اضغط لاختيار صور'}
+            </span>
+            <span style={{ fontSize:'0.7rem', color:'var(--text-muted)' }}>من الاستوديو أو الكاميرا</span>
+            <input type="file" accept="image/*" multiple style={{ display:'none' }} onChange={async (e) => {
+              const files = Array.from(e.target.files || [])
+              for (const file of files) {
+                const compressed = await compressImage(file)
+                setForm(f => ({ ...f, imageFiles: [...f.imageFiles, compressed] }))
+              }
+              e.target.value = ''
+            }} />
+          </label>
         </Field>
 
         {/* المميزات */}
@@ -501,22 +554,51 @@ export default function AdminPage() {
               }}>💎 ترقية — من $20/شهر</button>
             </div>
 
-            <Field
-              label={form.type === 'فندق' ? 'صورة الغرف أو المميزات' : 'صورة المنيو'}
-              hint={form.type === 'فندق'
-                ? 'ارفع صورة للغرف أو مرافق الفندق على Imgur وانسخ الرابط هنا'
-                : 'ارفع صورة قائمتك على Imgur أو أي موقع وانسخ الرابط هنا'}
-            >
-              <input style={{ ...inp, direction:'ltr' }} value={form.menuImage}
-                onChange={e => set('menuImage', e.target.value)}
-                placeholder={form.type === 'فندق' ? 'https://imgur.com/hotel-room.jpg' : 'https://imgur.com/your-menu.jpg'} />
-              {form.menuImage && (
-                <div style={{ marginTop:'0.7rem', borderRadius:'12px', overflow:'hidden', maxHeight:'240px' }}>
-                  <img src={form.menuImage}
-                    alt={form.type === 'فندق' ? 'صورة الغرف' : 'صورة المنيو'}
-                    style={{ width:'100%', objectFit:'cover' }}
-                    onError={e => { e.target.style.display='none' }} />
+            <Field label={form.type === 'فندق' ? 'صورة الغرف أو المميزات' : 'صورة المنيو'}>
+              {form.menuImage ? (
+                <div>
+                  <div style={{ borderRadius:'14px', overflow:'hidden', border:'1px solid var(--border-color)' }}>
+                    <img src={form.menuImage} alt="صورة" style={{ width:'100%', height:'180px', objectFit:'cover', display:'block' }} />
+                  </div>
+                  <div style={{ display:'flex', gap:'0.5rem', marginTop:'0.5rem' }}>
+                    <label style={{
+                      flex:1, padding:'0.5rem', borderRadius:'10px', textAlign:'center',
+                      background:'rgba(255,255,255,0.06)', border:'1px solid var(--border-color)',
+                      color:'var(--text-secondary)', fontSize:'0.78rem', fontWeight:600,
+                      cursor:'pointer', fontFamily:'var(--font-main)',
+                    }}>
+                      🔄 تغيير
+                      <input type="file" accept="image/*" style={{ display:'none' }} onChange={async (e) => {
+                        const file = e.target.files?.[0]; if (!file) return
+                        const compressed = await compressImage(file, 600, 0.65)
+                        set('menuImage', compressed)
+                      }} />
+                    </label>
+                    <button onClick={() => set('menuImage', '')} style={{
+                      padding:'0.5rem 0.8rem', borderRadius:'10px',
+                      background:'rgba(200,50,50,0.08)', border:'1px solid rgba(200,50,50,0.3)',
+                      color:'#ff9090', fontSize:'0.78rem', fontWeight:600,
+                      cursor:'pointer', fontFamily:'var(--font-main)',
+                    }}>🗑️ حذف</button>
+                  </div>
                 </div>
+              ) : (
+                <label style={{
+                  display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                  padding:'1.5rem', borderRadius:'14px', cursor:'pointer',
+                  border:'2px dashed var(--border-color)', background:'rgba(255,255,255,0.02)',
+                }}>
+                  <div style={{ fontSize:'2.2rem', marginBottom:'0.4rem' }}>📸</div>
+                  <span style={{ fontSize:'0.85rem', fontWeight:700, color:'var(--color-primary-light)', marginBottom:'0.2rem' }}>
+                    اضغط لاختيار صورة
+                  </span>
+                  <span style={{ fontSize:'0.7rem', color:'var(--text-muted)' }}>من الاستوديو أو الكاميرا</span>
+                  <input type="file" accept="image/*" style={{ display:'none' }} onChange={async (e) => {
+                    const file = e.target.files?.[0]; if (!file) return
+                    const compressed = await compressImage(file, 600, 0.65)
+                    set('menuImage', compressed)
+                  }} />
+                </label>
               )}
             </Field>
           </>
@@ -544,16 +626,39 @@ export default function AdminPage() {
             {/* ─── فندق: صور الغرف ─── */}
             {form.type === 'فندق' ? (
               <>
-                <Field
-                  label="صور الغرف والمميزات (رابط لكل صورة في سطر)"
-                  hint="ارفع الصور على Imgur وأضف رابط كل صورة في سطر منفصل"
-                >
-                  <textarea
-                    style={{ ...inp, resize:'none', minHeight:'90px', direction:'ltr', lineHeight:1.7 }}
-                    value={form.menuImage}
-                    onChange={e => set('menuImage', e.target.value)}
-                    placeholder={'https://imgur.com/room1.jpg\nhttps://imgur.com/pool.jpg\nhttps://imgur.com/lobby.jpg'}
-                  />
+                <Field label="صور الغرف والمميزات">
+                  {form.imageFiles.length > 0 && (
+                    <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', marginBottom:'0.6rem' }}>
+                      {form.imageFiles.map((img, i) => (
+                        <div key={i} style={{ position:'relative', width:'80px', height:'80px', borderRadius:'12px', overflow:'hidden' }}>
+                          <img src={img} alt={`غرفة ${i+1}`} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                          <button onClick={() => setForm(f => ({ ...f, imageFiles: f.imageFiles.filter((_,x) => x !== i) }))} style={{
+                            position:'absolute', top:'2px', right:'2px', background:'rgba(0,0,0,0.7)',
+                            border:'none', borderRadius:'50%', width:'22px', height:'22px',
+                            color:'#ff9090', fontSize:'0.7rem', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+                          }}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <label style={{
+                    display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                    padding:'1rem', borderRadius:'14px', cursor:'pointer',
+                    border:'2px dashed rgba(99,102,241,0.4)', background:'rgba(99,102,241,0.04)',
+                  }}>
+                    <div style={{ fontSize:'1.8rem', marginBottom:'0.3rem' }}>🏨</div>
+                    <span style={{ fontSize:'0.82rem', fontWeight:700, color:'#a5b4fc' }}>
+                      {form.imageFiles.length > 0 ? 'إضافة صورة أخرى' : 'اضغط لاختيار صور الغرف'}
+                    </span>
+                    <input type="file" accept="image/*" multiple style={{ display:'none' }} onChange={async (e) => {
+                      const files = Array.from(e.target.files || [])
+                      for (const file of files) {
+                        const compressed = await compressImage(file)
+                        setForm(f => ({ ...f, imageFiles: [...f.imageFiles, compressed] }))
+                      }
+                      e.target.value = ''
+                    }} />
+                  </label>
                 </Field>
 
                 <p style={{ fontSize:'0.8rem', fontWeight:700, color:'var(--text-secondary)', marginBottom:'0.7rem', marginTop:'0.3rem' }}>
@@ -606,9 +711,47 @@ export default function AdminPage() {
                   ＋ إضافة صنف آخر
                 </button>
                 <Field label="صورة إضافية للمنيو (اختياري)">
-                  <input style={{ ...inp, direction:'ltr' }} value={form.menuImage}
-                    onChange={e => set('menuImage', e.target.value)}
-                    placeholder="https://..." />
+                  {form.menuImage ? (
+                    <div>
+                      <div style={{ borderRadius:'12px', overflow:'hidden', border:'1px solid var(--border-color)' }}>
+                        <img src={form.menuImage} alt="منيو" style={{ width:'100%', height:'150px', objectFit:'cover', display:'block' }} />
+                      </div>
+                      <div style={{ display:'flex', gap:'0.5rem', marginTop:'0.5rem' }}>
+                        <label style={{
+                          flex:1, padding:'0.4rem', borderRadius:'8px', textAlign:'center',
+                          background:'rgba(255,255,255,0.06)', border:'1px solid var(--border-color)',
+                          color:'var(--text-secondary)', fontSize:'0.75rem', fontWeight:600,
+                          cursor:'pointer', fontFamily:'var(--font-main)',
+                        }}>
+                          🔄 تغيير
+                          <input type="file" accept="image/*" style={{ display:'none' }} onChange={async (e) => {
+                            const file = e.target.files?.[0]; if (!file) return
+                            const compressed = await compressImage(file, 600, 0.65)
+                            set('menuImage', compressed)
+                          }} />
+                        </label>
+                        <button onClick={() => set('menuImage', '')} style={{
+                          padding:'0.4rem 0.6rem', borderRadius:'8px',
+                          background:'rgba(200,50,50,0.08)', border:'1px solid rgba(200,50,50,0.3)',
+                          color:'#ff9090', fontSize:'0.75rem', cursor:'pointer', fontFamily:'var(--font-main)',
+                        }}>🗑️</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label style={{
+                      display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem',
+                      padding:'0.8rem', borderRadius:'12px', cursor:'pointer',
+                      border:'2px dashed var(--border-color)', background:'rgba(255,255,255,0.02)',
+                    }}>
+                      <span style={{ fontSize:'1.2rem' }}>📸</span>
+                      <span style={{ fontSize:'0.82rem', fontWeight:600, color:'var(--color-primary-light)' }}>اختر صورة المنيو</span>
+                      <input type="file" accept="image/*" style={{ display:'none' }} onChange={async (e) => {
+                        const file = e.target.files?.[0]; if (!file) return
+                        const compressed = await compressImage(file, 600, 0.65)
+                        set('menuImage', compressed)
+                      }} />
+                    </label>
+                  )}
                 </Field>
               </>
             )}
