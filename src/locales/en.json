@@ -146,7 +146,7 @@
     "login_action": "Login / Create Account",
     "subscribe_to_add": "Subscribe to Add Your Place",
     "subscribe_desc": "To add a restaurant, cafe or hotel, you need an active subscription",
-    "subscribe_cta": "Subscribe Now — From $20 only",
+    "subscribe_cta": "Start Your Free Trial",
     "plan_details": "Plan Details",
     "features": {
       "add_places": "Add up to 3 places",
@@ -218,7 +218,7 @@
     "free_plan": "Free Plan",
     "free_menu_hint": "You can add one image for your menu. Subscribe for full menu with prices.",
     "free_hotel_hint": "You can add one room/amenity photo. Subscribe for a full photo gallery.",
-    "upgrade": "Upgrade — from $20/mo",
+    "upgrade": "🎁 Start Free Trial",
     "menu_image_label": "Menu Image",
     "menu_image_hint": "Upload your menu to Imgur and paste the link here",
     "room_image_label": "Room or Amenity Photo",

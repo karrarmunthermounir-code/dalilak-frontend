@@ -551,7 +551,7 @@ export default function AdminPage() {
                 marginTop:'0.7rem', padding:'0.5rem 1rem', borderRadius:'10px', border:'none',
                 background:'linear-gradient(135deg,var(--color-accent),var(--color-accent-dark))',
                 color:'#000', fontWeight:800, fontSize:'0.8rem', cursor:'pointer', fontFamily:'var(--font-main)',
-              }}>💎 ترقية — من $20/شهر</button>
+              }}>🎁 ابدأ التجربة المجانية</button>
             </div>
 
             <Field label={form.type === 'فندق' ? 'صورة الغرف أو المميزات' : 'صورة المنيو'}>

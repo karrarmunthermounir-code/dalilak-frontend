@@ -3,55 +3,56 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 
-// ─── التيرات الثلاثة ───
+// ─── خطط الاشتراك ───
 const PLANS = [
   {
-    id: 'free',
-    name: 'مجاني',
-    nameEn: 'Free',
+    id: 'free_trial',
+    name: 'تجربة مجانية',
+    nameEn: 'Free Trial',
     price: 0,
-    icon: '🆓',
-    color: '#94a3b8',
-    gradient: 'linear-gradient(135deg, #334155, #1e293b)',
-    border: 'rgba(148,163,184,0.3)',
+    period: 'أول شهر',
+    icon: '🎁',
+    color: '#5dde8a',
+    gradient: 'linear-gradient(135deg, rgba(26,107,69,0.25), rgba(26,107,69,0.08))',
+    border: 'rgba(93,222,138,0.5)',
+    badge: '🎉 مجاناً!',
     features: [
-      { text: 'إضافة مكان واحد', ok: true },
-      { text: 'ظهور في نتائج البحث', ok: true },
-      { text: 'صورة واحدة فقط', ok: true },
-      { text: 'قائمة طعام (منيو)', ok: false },
-      { text: 'إضافة عروض وخصومات', ok: false },
-      { text: 'إحصائيات المشاهدات', ok: false },
-      { text: 'ظهور مميز في الأعلى', ok: false },
+      { text: 'كل المميزات مفتوحة', ok: true },
+      { text: 'إضافة حتى 10 أماكن', ok: true },
+      { text: 'صور غير محدودة', ok: true },
+      { text: 'قائمة طعام كاملة (منيو)', ok: true },
+      { text: 'إضافة عروض وخصومات', ok: true },
+      { text: 'إحصائيات تفصيلية كاملة', ok: true },
+      { text: 'ظهور مميز في الأعلى', ok: true },
     ],
   },
   {
     id: 'monthly_pro',
-    name: 'Pro شهري',
-    nameEn: 'Pro',
-    price: 20,
-    iqd: 26000,
+    name: 'شهري',
+    nameEn: 'Monthly',
+    price: 50,
+    iqd: 65000,
     period: 'شهر',
     icon: '⭐',
     color: 'var(--color-primary-light)',
     gradient: 'linear-gradient(135deg, var(--color-primary-dark), var(--bg-dark))',
     border: 'rgba(26,107,69,0.5)',
-    badge: 'الأكثر طلباً',
     features: [
-      { text: 'إضافة حتى 3 أماكن', ok: true },
-      { text: 'ظهور في نتائج البحث', ok: true },
-      { text: 'صور متعددة (حتى 10)', ok: true },
+      { text: 'كل المميزات مفتوحة', ok: true },
+      { text: 'إضافة حتى 10 أماكن', ok: true },
+      { text: 'صور غير محدودة', ok: true },
       { text: 'قائمة طعام كاملة (منيو)', ok: true },
       { text: 'إضافة عروض وخصومات', ok: true },
-      { text: 'إحصائيات أساسية', ok: false },
-      { text: 'ظهور مميز في الأعلى ⭐', ok: false },
+      { text: 'إحصائيات تفصيلية كاملة', ok: true },
+      { text: 'ظهور مميز في الأعلى', ok: true },
     ],
   },
   {
     id: 'premium',
-    name: 'Premium',
-    nameEn: 'Premium',
-    price: 100,
-    iqd: 130000,
+    name: 'سنوي',
+    nameEn: 'Yearly',
+    price: 250,
+    iqd: 325000,
     period: 'سنة',
     icon: '💎',
     color: 'var(--color-accent-light)',
@@ -59,11 +60,11 @@ const PLANS = [
     border: 'rgba(201,151,58,0.5)',
     badge: '🔥 وفّر 58%',
     features: [
+      { text: 'كل المميزات مفتوحة', ok: true },
       { text: 'إضافة حتى 10 أماكن', ok: true },
-      { text: 'ظهور في نتائج البحث', ok: true },
       { text: 'صور غير محدودة', ok: true },
-      { text: 'قائمة طعام كاملة + صور', ok: true },
-      { text: 'عروض وخصومات مع إشعارات', ok: true },
+      { text: 'قائمة طعام كاملة (منيو)', ok: true },
+      { text: 'إضافة عروض وخصومات', ok: true },
       { text: 'إحصائيات تفصيلية كاملة 📊', ok: true },
       { text: 'ظهور مميز في الأعلى 💎', ok: true },
     ],
@@ -266,8 +267,13 @@ export default function SubscriptionsPage() {
   const [showModal,    setShowModal]    = useState(false)
 
   const handleSelect = (plan) => {
-    if (plan.price === 0) return
     if (!isLoggedIn) { navigate('/auth', { state:{ from:'/subscriptions' } }); return }
+    if (plan.id === 'free_trial') {
+      // تفعيل التجربة المجانية مباشرة (30 يوم)
+      subscribe('free_trial', 'تجربة مجانية')
+      navigate('/dashboard')
+      return
+    }
     setSelectedPlan(plan)
     setShowModal(true)
   }
@@ -402,24 +408,24 @@ export default function SubscriptionsPage() {
 
               <button
                 onClick={() => handleSelect(plan)}
-                disabled={isCurrent || plan.price === 0}
+                disabled={isCurrent}
                 style={{
                   width:'100%', padding:'0.8rem', borderRadius:'14px', border:'none',
                   background: isCurrent
                     ? 'rgba(93,222,138,0.15)'
-                    : plan.price === 0
-                      ? 'rgba(255,255,255,0.08)'
+                    : plan.id === 'free_trial'
+                      ? 'linear-gradient(135deg, #22c55e, #16a34a)'
                       : plan.id === 'premium'
                         ? 'linear-gradient(135deg,var(--color-accent),var(--color-accent-dark))'
                         : 'linear-gradient(135deg,var(--color-primary),var(--color-primary-dark))',
-                  color: isCurrent ? '#5dde8a' : plan.price===0 ? 'var(--text-muted)' : plan.id==='premium' ? '#000' : '#fff',
-                  fontWeight:800, fontSize:'0.95rem', cursor: isCurrent||plan.price===0 ? 'default' : 'pointer',
+                  color: isCurrent ? '#5dde8a' : plan.id==='premium' ? '#000' : '#fff',
+                  fontWeight:800, fontSize:'0.95rem', cursor: isCurrent ? 'default' : 'pointer',
                   fontFamily:'var(--font-main)',
-                  boxShadow: !isCurrent && plan.price>0 ? '0 4px 20px rgba(0,0,0,0.3)' : 'none',
+                  boxShadow: !isCurrent ? '0 4px 20px rgba(0,0,0,0.3)' : 'none',
                 }}
               >
-                {isCurrent  ? '✓ خطتك الحالية'
-                 : plan.price===0 ? 'متاح دائماً'
+                {isCurrent ? '✓ خطتك الحالية'
+                 : plan.id === 'free_trial' ? '🎁 ابدأ التجربة المجانية'
                  : `اشترك في ${plan.name}`}
               </button>
             </div>

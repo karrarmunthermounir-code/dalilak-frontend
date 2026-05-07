@@ -37,7 +37,7 @@ export default function DashboardPage() {
 
   const TIER_COLORS = { free:'#94a3b8', pro:'var(--color-primary-light)', premium:'var(--color-accent-light)' }
   const TIER_ICONS  = { free:'🆓', pro:'⭐', premium:'💎' }
-  const TIER_LABELS = { free:'مجاني', pro:'Pro', premium:'Premium' }
+  const TIER_LABELS = { free:'مجاني', pro:'مشترك', premium:'مشترك' }
 
   const menuItems = [
     {
@@ -219,7 +219,7 @@ export default function DashboardPage() {
               fontFamily:'var(--font-main)', cursor:'pointer',
               boxShadow:'0 4px 20px rgba(201,151,58,0.3)',
             }}>
-              اشترك الآن — من 20$ فقط
+              ابدأ تجربتك المجانية
             </button>
           </div>
         )}

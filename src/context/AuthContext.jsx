@@ -49,7 +49,8 @@ const restoreFromNativeStorage = async () => {
 const calcTier = (sub) => {
   if (!sub?.active) return 'free'
   if (['premium', 'yearly'].includes(sub.planId)) return 'premium'
-  if (['pro', 'monthly_pro'].includes(sub.planId)) return 'pro'
+  if (['pro', 'monthly_pro'].includes(sub.planId)) return 'premium' // كل المميزات مفتوحة
+  if (['free_trial'].includes(sub.planId)) return 'premium' // التجربة المجانية = كل المميزات
   return 'free'
 }
 
