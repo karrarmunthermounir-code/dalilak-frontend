@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { Preferences } from '@capacitor/preferences'
 
 const AuthContext = createContext(null)
 
@@ -6,12 +7,43 @@ const API = (import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api'
 const TOKEN_KEY = 'dalilak_token'
 const USER_KEY  = 'dalilak_user'
 
-// ─── مساعدات localStorage للـ cache ───
-const getCachedUser  = () => { try { const s = localStorage.getItem(USER_KEY);  return s ? JSON.parse(s) : null } catch { return null } }
-const setCachedUser  = (u) => localStorage.setItem(USER_KEY, JSON.stringify(u))
-const clearCache     = () => { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY) }
-const getToken       = () => localStorage.getItem(TOKEN_KEY)
-const setToken       = (t) => localStorage.setItem(TOKEN_KEY, t)
+// ─── تخزين دائم: يحفظ في localStorage + Capacitor Preferences ───
+const getCachedUser = () => {
+  try { const s = localStorage.getItem(USER_KEY); return s ? JSON.parse(s) : null } catch { return null }
+}
+const setCachedUser = (u) => {
+  const json = JSON.stringify(u)
+  localStorage.setItem(USER_KEY, json)
+  Preferences.set({ key: USER_KEY, value: json }).catch(() => {})
+}
+const getToken = () => localStorage.getItem(TOKEN_KEY)
+const setToken = (t) => {
+  localStorage.setItem(TOKEN_KEY, t)
+  Preferences.set({ key: TOKEN_KEY, value: t }).catch(() => {})
+}
+const clearCache = () => {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(USER_KEY)
+  Preferences.remove({ key: TOKEN_KEY }).catch(() => {})
+  Preferences.remove({ key: USER_KEY }).catch(() => {})
+}
+
+// ─── استعادة من التخزين الدائم عند فتح التطبيق ───
+const restoreFromNativeStorage = async () => {
+  try {
+    const { value: token } = await Preferences.get({ key: TOKEN_KEY })
+    const { value: userJson } = await Preferences.get({ key: USER_KEY })
+    if (token && !localStorage.getItem(TOKEN_KEY)) {
+      localStorage.setItem(TOKEN_KEY, token)
+    }
+    if (userJson && !localStorage.getItem(USER_KEY)) {
+      localStorage.setItem(USER_KEY, userJson)
+    }
+    return { token, user: userJson ? JSON.parse(userJson) : null }
+  } catch {
+    return { token: null, user: null }
+  }
+}
 
 // ─── إحسابة Tier من الاشتراك ───
 const calcTier = (sub) => {
@@ -92,18 +124,37 @@ export function AuthProvider({ children }) {
   const [user,         setUser]         = useState(() => getCachedUser())
   const [subscription, setSubscription] = useState(() => getCachedUser()?.subscription || { active: false, tier: 'free' })
   const [favorites,    setFavorites]    = useState(() => getCachedUser()?.favorites || [])
-  const [loading,      setLoading]      = useState(!!getToken()) // يحمّل فقط إذا في token
+  const [loading,      setLoading]      = useState(true) // دائماً true بالبداية لحد ما نسترجع الجلسة
 
-  // ─── تحديث البيانات من الخادم عند التهيئة ───
+  // ─── استعادة الجلسة + تحديث من الخادم ───
   useEffect(() => {
-    const token = getToken()
-    if (!token) { setLoading(false); return }
+    const init = async () => {
+      // 1. استعادة من التخزين الدائم (Capacitor Preferences / SharedPreferences)
+      const restored = await restoreFromNativeStorage()
+      
+      // 2. قراءة البيانات المستعادة
+      const cachedUser = restored.user || getCachedUser()
+      const token = restored.token || getToken()
 
-    fetch(`${API}/auth/me`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    })
-      .then(r => r.json())
-      .then(data => {
+      if (cachedUser) {
+        setUser(cachedUser)
+        const sub = cachedUser.subscription || {}
+        const active = isSubActive(sub)
+        setSubscription({ ...sub, active, tier: active ? calcTier(sub) : 'free' })
+        setFavorites(cachedUser.favorites || [])
+      }
+
+      if (!token) {
+        setLoading(false)
+        return
+      }
+
+      // 3. تحديث من السيرفر (بالخلفية — لا ينتظر المستخدم)
+      try {
+        const res = await fetch(`${API}/auth/me`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        })
+        const data = await res.json()
         if (data.success) {
           setUser(data.user)
           setCachedUser(data.user)
@@ -111,24 +162,20 @@ export function AuthProvider({ children }) {
           const active = isSubActive(sub)
           setSubscription({ ...sub, active, tier: active ? calcTier(sub) : 'free' })
           setFavorites(data.user.favorites || [])
-        } else {
-          // Token انتهى أو غير صحيح
+        } else if (!cachedUser) {
+          // Token غير صحيح ولا يوجد cache
           clearCache()
           setUser(null)
           setSubscription({ active: false, tier: 'free' })
         }
-      })
-      .catch(() => {
-        // السيرفر غير متوفر — نستخدم الـ cache
-        const cached = getCachedUser()
-        if (cached) {
-          const sub = cached.subscription || {}
-          const active = isSubActive(sub)
-          setSubscription({ ...sub, active, tier: active ? calcTier(sub) : 'free' })
-          setFavorites(cached.favorites || [])
-        }
-      })
-      .finally(() => setLoading(false))
+      } catch {
+        // السيرفر غير متوفر — نبقى على الـ cache
+      }
+      
+      setLoading(false)
+    }
+
+    init()
   }, [])
 
   const login = useCallback((userData, token) => {
