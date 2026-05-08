@@ -21,6 +21,8 @@ const FavoritesPage      = lazy(() => import('./pages/FavoritesPage'))
 const PaymentSuccessPage = lazy(() => import('./pages/PaymentSuccessPage'))
 const PaymentFailedPage  = lazy(() => import('./pages/PaymentFailedPage'))
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
+const MyPlacePage        = lazy(() => import('./pages/MyPlacePage'))
+const MyStatsPage        = lazy(() => import('./pages/MyStatsPage'))
 
 function PageLoader() {
   return (
@@ -67,6 +69,8 @@ function App() {
               <Route path="/dashboard/menu"      element={<MenuManagerPage />} />
               <Route path="/dashboard/offers"    element={<OffersPage />} />
               <Route path="/dashboard/analytics" element={<AnalyticsPage />} />
+              <Route path="/dashboard/my-place"  element={<MyPlacePage />} />
+              <Route path="/dashboard/my-stats"  element={<MyStatsPage />} />
 
               {/* ─── صفحات الدفع ─── */}
               <Route path="/payment/success" element={<PaymentSuccessPage />} />

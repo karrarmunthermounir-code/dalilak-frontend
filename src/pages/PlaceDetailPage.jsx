@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { fetchPlaceById, postReview } from '../services/api'
 import StarRating from '../components/StarRating'
 import LoadingSpinner from '../components/LoadingSpinner'
+import { sendNativeNotification } from '../utils/notifications'
 
 const FALLBACK_IMG = 'https://images.unsplash.com/photo-1537047902294-62a40c20a6ae?w=800'
 
@@ -26,7 +27,54 @@ function BookingModal({ place, onClose }) {
     e.preventDefault()
     if (!form.name.trim() || !form.phone.trim()) return
     setLoading(true)
-    await new Promise(r => setTimeout(r, 1200)) // محاكاة API
+    await new Promise(r => setTimeout(r, 900))
+
+    const BOOKINGS_KEY = 'dalilak_table_bookings'
+    let newBooking = null
+    try {
+      const existing = JSON.parse(localStorage.getItem(BOOKINGS_KEY) || '[]')
+      newBooking = {
+        id:        Date.now().toString(),
+        placeId:   place._id || place.id || '',
+        placeName: place.name,
+        name:      form.name.trim(),
+        phone:     form.phone.trim(),
+        date:      form.date,
+        time:      form.time,
+        guests:    form.guests,
+        notes:     form.notes,
+        status:    'pending',
+        createdAt: new Date().toISOString(),
+      }
+      localStorage.setItem(BOOKINGS_KEY, JSON.stringify([newBooking, ...existing]))
+    } catch (_) {}
+
+    // ─── أرسل واتساب لصاحب المكان فقط إذا كان هو المكان المسجل ───
+    try {
+      const myPlace  = JSON.parse(localStorage.getItem('dalilak_my_place') || 'null')
+      const myId     = myPlace?._id || myPlace?.id || ''
+      const bookedId = place._id || place.id || ''
+
+      // مقارنة دقيقة بالـ ID فقط
+      if (myPlace && myId && bookedId && myId === bookedId && myPlace.phone) {
+        const raw  = myPlace.phone.replace(/[^0-9]/g, '')
+        const intl = raw.startsWith('964') ? raw : '964' + raw.replace(/^0/, '')
+        const msg  = encodeURIComponent(
+          `🔔 حجز جديد في مكانك!\n` +
+          `━━━━━━━━━━━━━━━\n` +
+          `👤 الاسم: ${form.name}\n` +
+          `📞 الهاتف: ${form.phone}\n` +
+          `📅 التاريخ: ${form.date}\n` +
+          `🕐 الوقت: ${form.time}\n` +
+          `👥 الأشخاص: ${form.guests}\n` +
+          `${form.notes ? '📝 ملاحظات: ' + form.notes + '\n' : ''}` +
+          `━━━━━━━━━━━━━━━\n` +
+          `بانتظار تأكيدك من تطبيق دليلك`
+        )
+        window.open(`https://wa.me/${intl}?text=${msg}`, '_blank')
+      }
+    } catch (_) {}
+
     setLoading(false)
     setStep('success')
   }
@@ -66,25 +114,36 @@ function BookingModal({ place, onClose }) {
 
         <div style={{ padding: '1.5rem' }}>
           {step === 'success' ? (
-            // ─── شاشة النجاح ───
+            // ─── شاشة الانتظار ───
             <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-              <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>✅</div>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
-                تم تأكيد حجزك!
+              <div style={{ fontSize: '3.5rem', marginBottom: '0.7rem' }}>⏳</div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>
+                طلب حجزك وصل!
               </h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', lineHeight: 1.7 }}>
-                تم إرسال تفاصيل الحجز لـ <strong style={{ color: 'var(--color-accent-light)' }}>{place.name}</strong>.<br/>
-                سيتم التواصل معك على <strong>{form.phone}</strong> لتأكيد الحجز.
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)',
+                borderRadius: '99px', padding: '0.3rem 0.9rem', marginBottom: '0.8rem',
+              }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#f59e0b' }}>
+                  🕐 بانتظار تأكيد صاحب المكان
+                </span>
+              </div>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: 1.7, marginBottom: '1rem' }}>
+                سيتواصل معك صاحب <strong style={{ color: 'var(--color-accent-light)' }}>{place.name}</strong>
+                {' '}على واتساب أو هاتفك<br/>
+                <strong style={{ color: 'var(--text-primary)' }}>{form.phone}</strong>
+                {' '}لتأكيد أو إلغاء الحجز.
               </p>
               <div style={{
-                margin: '1.2rem 0',
-                background: 'rgba(26,107,69,0.1)', border: '1px solid rgba(26,107,69,0.3)',
-                borderRadius: '12px', padding: '1rem', textAlign: 'right',
-                fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 2,
+                background: 'rgba(26,107,69,0.08)', border: '1px solid rgba(26,107,69,0.25)',
+                borderRadius: '12px', padding: '0.9rem', textAlign: 'right',
+                fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 2,
+                marginBottom: '1.2rem',
               }}>
                 <div>👤 <strong>{form.name}</strong></div>
                 <div>📅 {form.date} — {form.time}</div>
-                <div>👥 {form.guests} {isKashta ? 'شخص' : (form.guests === 1 ? 'شخص' : 'أشخاص')}</div>
+                <div>👥 {form.guests} {isKashta ? 'شخص' : 'أشخاص'}</div>
                 {form.notes && <div>📝 {form.notes}</div>}
               </div>
               <button onClick={onClose} style={{
@@ -93,7 +152,7 @@ function BookingModal({ place, onClose }) {
                 border: 'none', borderRadius: '10px', color: '#fff',
                 fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer',
                 fontFamily: 'var(--font-main)',
-              }}>حسناً</button>
+              }}>حسناً، سأنتظر</button>
             </div>
           ) : (
             // ─── نموذج الحجز ───

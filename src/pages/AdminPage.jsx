@@ -36,7 +36,9 @@ const TYPES = [
 const REST_FEATURES = ['واي فاي','موقف سيارات','صالة عائلية','دليفري','هواء طلق','تكييف','وجبة إفطار','مناسب للأطفال']
 const CAFE_FEATURES = ['واي فاي','هواء طلق','تكييف','قهوة مختصة','حلويات','موقف سيارات','مناسب للعمل','موسيقى']
 const HOTEL_FEATURES = ['واي فاي','مسبح','سبا','إفطار مجاني','موقف سيارات','خدمة غرف','صالة رياضة','قاعة مؤتمرات']
-const MENU_CATS = ['مشاوي','رئيسية','مشروبات','مقبلات','حلويات','برغر','أسماك','سلطات','وجبات سريعة','أخرى']
+const REST_MENU_CATS  = ['مشاوي','رئيسية','مشروبات','مقبلات','حلويات','برغر','أسماك','دجاج','سلطات','وجبات سريعة','أخرى']
+const CAFE_MENU_CATS  = ['قهوة','مشروبات ساخنة','مشروبات باردة','عصائر','حلويات','كيك','نراكيل','سندويشات','أخرى']
+const getMenuCats = (type) => type === 'كافيه' ? CAFE_MENU_CATS : REST_MENU_CATS
 
 const getFeatures = (type) => type === 'فندق' ? HOTEL_FEATURES : type === 'كافيه' ? CAFE_FEATURES : REST_FEATURES
 
@@ -73,18 +75,23 @@ function Field({ label, required, error, hint, children }) {
 // ──────────────────────────────────────────────
 // مكوّن صنف المنيو (للمشتركين)
 // ──────────────────────────────────────────────
-function MenuItemRow({ item, idx, onChange, onRemove }) {
+function MenuItemRow({ item, idx, onChange, onRemove, placeType, onImagePick }) {
+  const cats = getMenuCats(placeType)
   return (
     <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '14px', padding: '0.9rem', marginBottom: '0.6rem', border: '1px solid rgba(255,255,255,0.06)' }}>
+
+      {/* اسم + سعر */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
         <input style={inp} value={item.name} placeholder="اسم الصنف *" onChange={e => onChange(idx, 'name', e.target.value)} />
         <input style={inp} type="number" value={item.price} placeholder="السعر (د.ع)" onChange={e => onChange(idx, 'price', e.target.value)} />
       </div>
+
+      {/* التصنيف + حذف */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
         <select value={item.category} onChange={e => onChange(idx, 'category', e.target.value)}
           style={{ ...inp, cursor: 'pointer', flex: 1 }}>
           <option value="">التصنيف...</option>
-          {MENU_CATS.map(c => <option key={c}>{c}</option>)}
+          {cats.map(c => <option key={c}>{c}</option>)}
         </select>
         {idx > 0 && (
           <button type="button" onClick={() => onRemove(idx)} style={{
@@ -94,8 +101,43 @@ function MenuItemRow({ item, idx, onChange, onRemove }) {
           }}>✕</button>
         )}
       </div>
-      <input style={{ ...inp, fontSize: '0.82rem' }} value={item.description}
+
+      {/* وصف */}
+      <input style={{ ...inp, fontSize: '0.82rem', marginBottom: '0.5rem' }} value={item.description}
         placeholder="وصف اختياري..." onChange={e => onChange(idx, 'description', e.target.value)} />
+
+      {/* صورة الصنف */}
+      {item.image ? (
+        <div style={{ position: 'relative', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--border-color)', marginTop: '0.3rem' }}>
+          <img src={item.image} alt={item.name} style={{ width: '100%', height: '120px', objectFit: 'cover', display: 'block' }} />
+          <div style={{ position: 'absolute', top: '6px', right: '6px', display: 'flex', gap: '0.3rem' }}>
+            <label style={{
+              background: 'rgba(0,0,0,0.7)', borderRadius: '8px', padding: '0.25rem 0.5rem',
+              cursor: 'pointer', fontSize: '0.72rem', color: '#fff', fontFamily: 'var(--font-main)',
+            }}>
+              🔄
+              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => onImagePick(idx, e)} />
+            </label>
+            <button type="button" onClick={() => onChange(idx, 'image', '')} style={{
+              background: 'rgba(200,50,50,0.8)', border: 'none', borderRadius: '8px',
+              padding: '0.25rem 0.5rem', cursor: 'pointer', fontSize: '0.72rem', color: '#fff',
+            }}>🗑️</button>
+          </div>
+        </div>
+      ) : (
+        <label style={{
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          padding: '0.5rem 0.8rem', borderRadius: '10px', cursor: 'pointer',
+          border: '1px dashed var(--border-color)', background: 'rgba(255,255,255,0.02)',
+          marginTop: '0.3rem',
+        }}>
+          <span style={{ fontSize: '1rem' }}>📸</span>
+          <span style={{ fontSize: '0.78rem', color: 'var(--color-primary-light)', fontFamily: 'var(--font-main)', fontWeight: 600 }}>
+            إضافة صورة للصنف
+          </span>
+          <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => onImagePick(idx, e)} />
+        </label>
+      )}
     </div>
   )
 }
@@ -129,8 +171,19 @@ export default function AdminPage() {
   const changeMenu = (idx, k, v) =>
     setForm(f => { const m = [...f.menu]; m[idx] = { ...m[idx], [k]: v }; return { ...f, menu: m } })
 
-  const addItem   = () => setForm(f => ({ ...f, menu: [...f.menu, { name: '', price: '', category: '', description: '' }] }))
+  const addItem   = () => setForm(f => ({ ...f, menu: [...f.menu, { name: '', price: '', category: '', description: '', image: '' }] }))
   const removeItem = (i) => setForm(f => ({ ...f, menu: f.menu.filter((_, x) => x !== i) }))
+
+  // ── رفع صورة صنف المنيو ──
+  const handleMenuImagePick = async (idx, e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const compressed = await compressImage(file, 500, 0.65)
+      changeMenu(idx, 'image', compressed)
+    } catch { alert('خطأ في معالجة الصورة') }
+    e.target.value = ''
+  }
 
   // ── التحقق ──
   const validate = () => {
@@ -157,14 +210,21 @@ export default function AdminPage() {
         ? form.menu.filter(m => m.name.trim()).map(m => ({ ...m, price: Number(m.price) || 0 }))
         : (form.menuImage ? [{ name: 'منيو الصور', menuImage: form.menuImage, category: 'منيو' }] : [])
 
-      await addPlace({
+      const placeData = {
         ...form,
         images,
         menu: menuArr,
         area: form.address,
         ownerId: 'user_local',
         isFeatured: subscriptionTier === 'premium',
-      })
+        savedAt: Date.now(),
+      }
+      // addPlace يرجع newPlace مع _id — احفظه كاملاً حتى يشتغل الحذف لاحقاً
+      const newPlace = await addPlace(placeData)
+
+      // ─── احفظ newPlace (مع _id) بـ localStorage ───
+      localStorage.setItem('dalilak_my_place',      JSON.stringify(newPlace))
+      localStorage.setItem('dalilak_my_place_type', form.type)
       setStep(3)
     } catch {
       alert('حدث خطأ. جرب مرة أخرى.')
@@ -699,7 +759,7 @@ export default function AdminPage() {
               /* ─── مطعم/كافيه: منيو كامل ─── */
               <>
                 {form.menu.map((item, idx) => (
-                  <MenuItemRow key={idx} item={item} idx={idx} onChange={changeMenu} onRemove={removeItem} />
+                  <MenuItemRow key={idx} item={item} idx={idx} onChange={changeMenu} onRemove={removeItem} placeType={form.type} onImagePick={handleMenuImagePick} />
                 ))}
                 <button type="button" onClick={addItem} style={{
                   width:'100%', padding:'0.7rem', marginBottom:'1.2rem',

@@ -8,6 +8,9 @@ export const IRAQ_GOVERNORATES = [
   'كربلاء','النجف','القادسية','المثنى','صلاح الدين','الأنبار','ديالى'
 ]
 
+// عنوان السيرفر الحقيقي
+const API_BASE = (import.meta.env.VITE_API_URL || 'https://dalilak-api.onrender.com') + '/api'
+
 const delay = (ms) => new Promise(r => setTimeout(r, ms))
 
 const IMG = {
@@ -493,19 +496,45 @@ let PLACES = [
   },
 ]
 
+// ─── استرجع الأماكن المضافة من localStorage وأضفها للقائمة ───
+const USER_PLACES_KEY = 'dalilak_user_places'
+const loadUserPlaces  = () => { try { return JSON.parse(localStorage.getItem(USER_PLACES_KEY) || '[]') } catch { return [] } }
+const saveUserPlaces  = (list) => localStorage.setItem(USER_PLACES_KEY, JSON.stringify(list))
+
 // ── دوال API ──
+
+// بناء القائمة النهائية من الثابت + المحفوظ حالياً بال localStorage
+const getActivePlaces = () => {
+  const fresh     = loadUserPlaces()
+  const freshIds  = new Set(fresh.map(p => p._id || p.id))
+  const hardcoded = PLACES.filter(p => !freshIds.has(p._id) && !freshIds.has(p.id) && p.isActive && Number(p._id) < 1000000)
+  return [...fresh.filter(p => p.isActive), ...hardcoded]
+}
+
 export const fetchPlaces = async ({ governorate, type, search } = {}) => {
-  await delay(300)
-  let result = PLACES.filter(p => p.isActive)
+  // جرب السيرفر أولاً — إذا فشل استخدم البيانات المحلية ك fallback
+  try {
+    const params = new URLSearchParams()
+    if (governorate && governorate !== 'الكل') params.set('governorate', governorate)
+    if (type      && type      !== 'الكل') params.set('type', type)
+    if (search?.trim()) params.set('search', search.trim())
+    const res = await fetch(`${API_BASE}/places?${params}`, { signal: AbortSignal.timeout(5000) })
+    if (!res.ok) throw new Error('server error')
+    const json = await res.json()
+    if (json.success && json.data?.length) return json.data
+    // إذا السيرفر فارغ (لا توجد أماكن فيه)  ←― استخدم البيانات الثابتة + المحلية
+  } catch (_) {}
+  // الـ fallback: البيانات الثابتة + أماكن localStorage
+  let result = getActivePlaces()
   if (governorate && governorate !== 'الكل') result = result.filter(p => p.governorate === governorate)
-  if (type && type !== 'الكل') result = result.filter(p => p.type === type)
+  if (type      && type      !== 'الكل') result = result.filter(p => p.type      === type)
   if (search?.trim()) {
     const q = search.trim().toLowerCase()
     result = result.filter(p =>
       p.name.toLowerCase().includes(q) ||
-      p.description.toLowerCase().includes(q) ||
-      p.governorate.includes(search) ||
-      p.area.toLowerCase().includes(q)
+      p.description?.toLowerCase().includes(q) ||
+      p.governorate?.includes(search) ||
+      p.area?.toLowerCase().includes(q)
     )
   }
   return result
@@ -513,9 +542,26 @@ export const fetchPlaces = async ({ governorate, type, search } = {}) => {
 
 export const fetchPlaceById = async (id) => {
   await delay(250)
-  const place = PLACES.find(p => p._id === id)
+  // ابحث في القائمة الحية (تشمل المحذوفة من ال localStorage)
+  const place = getActivePlaces().find(p => p._id === id) || PLACES.find(p => p._id === id)
   if (!place) throw new Error('المكان غير موجود')
   return place
+}
+
+// ── حذف مكان المستخدم من السيرفر + الذاكرة + localStorage ──
+export const removeUserPlace = async (id) => {
+  // جرب حذف من السيرفر
+  try {
+    await fetch(`${API_BASE}/places/${id}`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(5000),
+    })
+  } catch (_) {}
+  // من الذاكرة
+  const idx = PLACES.findIndex(p => p._id === id || p.id === id)
+  if (idx !== -1) PLACES.splice(idx, 1)
+  // من localStorage
+  saveUserPlaces(loadUserPlaces().filter(p => (p._id || p.id) !== id))
 }
 
 export const postReview = async (id, review) => {
@@ -534,8 +580,29 @@ export const fetchTypes = async () => {
 }
 
 export const addPlace = async (placeData) => {
+  // جرب حفظ في السيرفر أولاً (يظهر لكل الأجهزة)
+  try {
+    const res = await fetch(`${API_BASE}/places`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(placeData),
+      signal: AbortSignal.timeout(8000),
+    })
+    if (res.ok) {
+      const json = await res.json()
+      if (json.success && json.data) {
+        const newPlace = { ...json.data, _id: json.data._id?.toString() || String(Date.now()) }
+        PLACES.unshift(newPlace)
+        saveUserPlaces([newPlace, ...loadUserPlaces()])
+        return newPlace
+      }
+    }
+  } catch (_) {}
+
+  // Fallback: حفظ محلياً فقط (السيرفر غير متاح)
   await delay(600)
   const newPlace = { ...placeData, _id: String(Date.now()), reviews: [], averageRating: 0, isActive: true }
   PLACES.unshift(newPlace)
+  saveUserPlaces([newPlace, ...loadUserPlaces()])
   return newPlace
 }

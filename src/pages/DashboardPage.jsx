@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { usePlaces } from '../hooks/usePlaces'
+import { requestNotificationPermission } from '../utils/notifications'
 
 const cardStyle = {
   background: 'var(--bg-card)',
@@ -35,14 +36,23 @@ export default function DashboardPage() {
     )
   }
 
+  // اطلب إذن الإشعارات تلقائياً عند فتح الداشبورد (مرة واحدة فقط)
+  useEffect(() => {
+    requestNotificationPermission()
+  }, [])
+
   const TIER_COLORS = { free:'#94a3b8', pro:'var(--color-primary-light)', premium:'var(--color-accent-light)' }
   const TIER_ICONS  = { free:'🆓', pro:'⭐', premium:'💎' }
   const TIER_LABELS = { free:'مجاني', pro:'مشترك', premium:'مشترك' }
 
+  const pendingBookings = (() => {
+    try { return JSON.parse(localStorage.getItem('dalilak_table_bookings') || '[]').filter(b => b.status === 'pending').length } catch { return 0 }
+  })()
+
   const menuItems = [
     {
-      icon: '🏪', label: 'معلومات مكاني', desc: 'تعديل الاسم، الصور، الوصف',
-      path: '/admin', badge: null, locked: false,
+      icon: '🏪', label: 'معلومات مكاني', desc: 'تعديل الاسم، الصور، الوصف، الموقع، حذف',
+      path: '/dashboard/my-place', badge: null, locked: false,
     },
     {
       icon: '🍴', label: 'قائمة الطعام (منيو)', desc: 'إضافة وتعديل الأصناف والأسعار',
@@ -53,8 +63,8 @@ export default function DashboardPage() {
       path: '/dashboard/offers', badge: 'Pro', locked: !canAddOffers,
     },
     {
-      icon: '📊', label: 'الإحصائيات', desc: 'المشاهدات، النقرات، الزوار',
-      path: '/dashboard/analytics', badge: 'Premium', locked: !canAccessAnalytics,
+      icon: '📊', label: 'إحصائيات مكاني', desc: 'المشاهدات، الاتصالات، حجوزات الطاولات',
+      path: '/dashboard/my-stats', badge: pendingBookings > 0 ? `🔔 ${pendingBookings}` : null, locked: false,
     },
   ]
 
@@ -179,9 +189,15 @@ export default function DashboardPage() {
                   <span style={{
                     fontSize:'0.62rem', fontWeight:800, padding:'0.1rem 0.45rem',
                     borderRadius:'99px',
-                    background: item.badge === 'Premium' ? 'rgba(201,151,58,0.2)' : 'rgba(26,107,69,0.2)',
-                    color: item.badge === 'Premium' ? 'var(--color-accent-light)' : 'var(--color-primary-light)',
-                    border: item.badge === 'Premium' ? '1px solid rgba(201,151,58,0.4)' : '1px solid rgba(26,107,69,0.4)',
+                    background: item.badge?.includes('🔔')
+                      ? 'rgba(245,158,11,0.2)'
+                      : item.badge === 'Premium' ? 'rgba(201,151,58,0.2)' : 'rgba(26,107,69,0.2)',
+                    color: item.badge?.includes('🔔')
+                      ? '#f59e0b'
+                      : item.badge === 'Premium' ? 'var(--color-accent-light)' : 'var(--color-primary-light)',
+                    border: item.badge?.includes('🔔')
+                      ? '1px solid rgba(245,158,11,0.4)'
+                      : item.badge === 'Premium' ? '1px solid rgba(201,151,58,0.4)' : '1px solid rgba(26,107,69,0.4)',
                   }}>
                     {item.badge}
                   </span>

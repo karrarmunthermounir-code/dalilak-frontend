@@ -1302,3 +1302,9 @@ body {
   }
 }
 
+
+/* --- WhatsApp pulse animation --- */
+@keyframes waPulse {
+  0%, 100% { box-shadow: 0 2px 10px rgba(37,211,102,0.35); }
+  50%       { box-shadow: 0 2px 20px rgba(37,211,102,0.7); }
+}

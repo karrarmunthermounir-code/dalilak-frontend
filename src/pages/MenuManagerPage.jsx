@@ -2,8 +2,11 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
-const CATEGORIES = ['مشاوي', 'رئيسية', 'مشروبات', 'مقبلات', 'حلويات', 'برغر', 'أسماك', 'دجاج', 'أخرى']
+const REST_MENU_CATS = ['مشاوي', 'رئيسية', 'مشروبات', 'مقبلات', 'حلويات', 'برغر', 'أسماك', 'دجاج', 'سلطات', 'وجبات سريعة', 'أخرى']
+const CAFE_MENU_CATS  = ['قهوة', 'مشروبات ساخنة', 'مشروبات باردة', 'عصائر', 'حلويات', 'كيك', 'نراكيل', 'سندويشات', 'أخرى']
+const getMenuCats = (type) => type === 'كافيه' ? CAFE_MENU_CATS : REST_MENU_CATS
 const MENU_KEY = 'dalilak_my_menu'
+const TYPE_KEY = 'dalilak_my_place_type'
 
 const loadMenu = () => {
   try { return JSON.parse(localStorage.getItem(MENU_KEY) || '[]') } catch { return [] }
@@ -43,14 +46,17 @@ export default function MenuManagerPage() {
   const { isLoggedIn, canEditMenu } = useAuth()
   const [items,    setItems]    = useState(loadMenu)
   const [editing,  setEditing]  = useState(null)
-  const [form,     setForm]     = useState({ name:'', price:'', category:'مشاوي', description:'', image:'' })
+  // اقرأ نوع المكان (مطعم/كافيه) من localStorage
+  const placeType = localStorage.getItem(TYPE_KEY) || 'مطعم'
+  const CATEGORIES = getMenuCats(placeType)
+  const [form,     setForm]     = useState({ name:'', price:'', category: CATEGORIES[0], description:'', image:'' })
   const [activeTab, setActiveTab] = useState('all')
   const [uploading, setUploading] = useState(false)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const openNew = () => {
-    setForm({ name:'', price:'', category:'مشاوي', description:'', image:'' })
+    setForm({ name:'', price:'', category: CATEGORIES[0], description:'', image:'' })
     setEditing('new')
   }
 

@@ -3,3 +3,6 @@ dist/
 android/
 .env
 *.apk
+
+# Local Netlify folder
+.netlify
