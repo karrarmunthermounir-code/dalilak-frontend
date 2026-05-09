@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { fetchPlaceById, postReview } from '../services/api'
 import StarRating from '../components/StarRating'
 import LoadingSpinner from '../components/LoadingSpinner'
-import { sendNativeNotification } from '../utils/notifications'
 
 const FALLBACK_IMG = 'https://images.unsplash.com/photo-1537047902294-62a40c20a6ae?w=800'
 
@@ -37,67 +36,17 @@ function BookingModal({ place, onClose }) {
       notes:     form.notes,
     }
 
-    let newBooking = null
     const placeId = place._id || place.id || ''
     const API = (import.meta.env.VITE_API_URL || 'https://dalilak-backend.onrender.com') + '/api'
 
-    // أرسل الحجز للسيرفر
+    // أرسل الحجز للسيرفر فقط — السيرفر يرسل إشعار Push لصاحب المكان
     try {
-      const res = await fetch(`${API}/places/${placeId}/bookings`, {
+      await fetch(`${API}/places/${placeId}/bookings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bookingData),
         signal: AbortSignal.timeout(8000),
       })
-      if (res.ok) {
-        const json = await res.json()
-        if (json.success) newBooking = json.data
-      }
-    } catch (_) {}
-
-    // Fallback: localStorage
-    if (!newBooking) {
-      newBooking = {
-        _id: Date.now().toString(),
-        placeId,
-        placeName: place.name,
-        ...bookingData,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      }
-    }
-
-    // احفظ محلياً أيضاً
-    try {
-      const BOOKINGS_KEY = 'dalilak_table_bookings'
-      const existing = JSON.parse(localStorage.getItem(BOOKINGS_KEY) || '[]')
-      localStorage.setItem(BOOKINGS_KEY, JSON.stringify([{ ...newBooking, placeName: place.name }, ...existing]))
-    } catch (_) {}
-
-    // ─── أرسل واتساب لصاحب المكان فقط إذا كان هو المكان المسجل ───
-    try {
-      const myPlace  = JSON.parse(localStorage.getItem('dalilak_my_place') || 'null')
-      const myId     = myPlace?._id || myPlace?.id || ''
-      const bookedId = place._id || place.id || ''
-
-      // مقارنة دقيقة بالـ ID فقط
-      if (myPlace && myId && bookedId && myId === bookedId && myPlace.phone) {
-        const raw  = myPlace.phone.replace(/[^0-9]/g, '')
-        const intl = raw.startsWith('964') ? raw : '964' + raw.replace(/^0/, '')
-        const msg  = encodeURIComponent(
-          `🔔 حجز جديد في مكانك!\n` +
-          `━━━━━━━━━━━━━━━\n` +
-          `👤 الاسم: ${form.name}\n` +
-          `📞 الهاتف: ${form.phone}\n` +
-          `📅 التاريخ: ${form.date}\n` +
-          `🕐 الوقت: ${form.time}\n` +
-          `👥 الأشخاص: ${form.guests}\n` +
-          `${form.notes ? '📝 ملاحظات: ' + form.notes + '\n' : ''}` +
-          `━━━━━━━━━━━━━━━\n` +
-          `بانتظار تأكيدك من تطبيق دليلك`
-        )
-        window.open(`https://wa.me/${intl}?text=${msg}`, '_blank')
-      }
     } catch (_) {}
 
     setLoading(false)
