@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { Preferences } from '@capacitor/preferences'
+import { subscribeToPush } from '../services/pushNotifications'
 
 const AuthContext = createContext(null)
 
@@ -163,6 +164,11 @@ export function AuthProvider({ children }) {
           const active = isSubActive(sub)
           setSubscription({ ...sub, active, tier: active ? calcTier(sub) : 'free' })
           setFavorites(data.user.favorites || [])
+
+          // ─── تفعيل إشعارات Push تلقائياً لأصحاب الأماكن ───
+          if (data.user.role === 'owner') {
+            subscribeToPush(token).catch(() => {})
+          }
         } else if (!cachedUser) {
           // Token غير صحيح ولا يوجد cache
           clearCache()
@@ -187,6 +193,11 @@ export function AuthProvider({ children }) {
     const active = isSubActive(sub)
     setSubscription({ ...sub, active, tier: active ? calcTier(sub) : 'free' })
     setFavorites(userData.favorites || [])
+
+    // ─── تفعيل إشعارات Push تلقائياً لأصحاب الأماكن ───
+    if (userData.role === 'owner' && token) {
+      subscribeToPush(token).catch(() => {})
+    }
   }, [])
 
   const logout = useCallback(() => {
