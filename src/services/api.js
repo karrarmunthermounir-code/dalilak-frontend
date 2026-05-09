@@ -541,11 +541,20 @@ export const fetchPlaces = async ({ governorate, type, search } = {}) => {
 }
 
 export const fetchPlaceById = async (id) => {
-  await delay(250)
-  // ابحث في القائمة الحية (تشمل المحذوفة من ال localStorage)
-  const place = getActivePlaces().find(p => p._id === id) || PLACES.find(p => p._id === id)
-  if (!place) throw new Error('المكان غير موجود')
-  return place
+  // أولاً: ابحث محلياً
+  const local = getActivePlaces().find(p => p._id === id) || PLACES.find(p => p._id === id)
+  if (local) return local
+
+  // ثانياً: اسأل السيرفر
+  try {
+    const res = await fetch(`${API_BASE}/places/${id}`, { signal: AbortSignal.timeout(5000) })
+    if (res.ok) {
+      const json = await res.json()
+      if (json.success && json.data) return json.data
+    }
+  } catch (_) {}
+
+  throw new Error('المكان غير موجود')
 }
 
 // ── حذف مكان المستخدم من السيرفر + الذاكرة + localStorage ──

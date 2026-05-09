@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 
-const WHATSAPP_NUMBER = '9647832373852'
+const WHATSAPP_NUMBER = '9647780400279'
 const WHATSAPP_MESSAGE = encodeURIComponent('مرحباً، أحتاج مساعدة في تطبيق دليلك 🌴')
 
 export default function BottomNav() {

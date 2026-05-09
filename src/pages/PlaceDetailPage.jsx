@@ -27,26 +27,51 @@ function BookingModal({ place, onClose }) {
     e.preventDefault()
     if (!form.name.trim() || !form.phone.trim()) return
     setLoading(true)
-    await new Promise(r => setTimeout(r, 900))
 
-    const BOOKINGS_KEY = 'dalilak_table_bookings'
+    const bookingData = {
+      name:      form.name.trim(),
+      phone:     form.phone.trim(),
+      date:      form.date,
+      time:      form.time,
+      guests:    form.guests,
+      notes:     form.notes,
+    }
+
     let newBooking = null
+    const placeId = place._id || place.id || ''
+    const API = (import.meta.env.VITE_API_URL || 'https://dalilak-backend.onrender.com') + '/api'
+
+    // أرسل الحجز للسيرفر
     try {
-      const existing = JSON.parse(localStorage.getItem(BOOKINGS_KEY) || '[]')
+      const res = await fetch(`${API}/places/${placeId}/bookings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bookingData),
+        signal: AbortSignal.timeout(8000),
+      })
+      if (res.ok) {
+        const json = await res.json()
+        if (json.success) newBooking = json.data
+      }
+    } catch (_) {}
+
+    // Fallback: localStorage
+    if (!newBooking) {
       newBooking = {
-        id:        Date.now().toString(),
-        placeId:   place._id || place.id || '',
+        _id: Date.now().toString(),
+        placeId,
         placeName: place.name,
-        name:      form.name.trim(),
-        phone:     form.phone.trim(),
-        date:      form.date,
-        time:      form.time,
-        guests:    form.guests,
-        notes:     form.notes,
-        status:    'pending',
+        ...bookingData,
+        status: 'pending',
         createdAt: new Date().toISOString(),
       }
-      localStorage.setItem(BOOKINGS_KEY, JSON.stringify([newBooking, ...existing]))
+    }
+
+    // احفظ محلياً أيضاً
+    try {
+      const BOOKINGS_KEY = 'dalilak_table_bookings'
+      const existing = JSON.parse(localStorage.getItem(BOOKINGS_KEY) || '[]')
+      localStorage.setItem(BOOKINGS_KEY, JSON.stringify([{ ...newBooking, placeName: place.name }, ...existing]))
     } catch (_) {}
 
     // ─── أرسل واتساب لصاحب المكان فقط إذا كان هو المكان المسجل ───

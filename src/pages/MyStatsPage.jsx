@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 const STATS_KEY    = 'dalilak_place_stats'
 const BOOKINGS_KEY = 'dalilak_table_bookings'
+const API_BASE = (import.meta.env.VITE_API_URL || 'https://dalilak-backend.onrender.com') + '/api'
 
 // بيانات افتراضية للإحصائيات
 const defaultStats = () => ({
@@ -20,8 +21,8 @@ const defaultStats = () => ({
 const loadStats    = () => { try { return JSON.parse(localStorage.getItem(STATS_KEY)) || defaultStats() } catch { return defaultStats() } }
 const loadBookings = () => { try { return JSON.parse(localStorage.getItem(BOOKINGS_KEY) || '[]') } catch { return [] } }
 
-const STATUS_COLORS = { pending:'#f59e0b', confirmed:'#22c55e', cancelled:'#ef4444' }
-const STATUS_LABELS = { pending:'بانتظار التأكيد', confirmed:'مؤكد', cancelled:'ملغي' }
+const STATUS_COLORS = { pending:'#f59e0b', confirmed:'#22c55e', cancelled:'#ef4444', rejected:'#ef4444' }
+const STATUS_LABELS = { pending:'بانتظار التأكيد', confirmed:'مؤكد', cancelled:'ملغي', rejected:'ملغي' }
 
 export default function MyStatsPage() {
   const navigate = useNavigate()
@@ -32,22 +33,58 @@ export default function MyStatsPage() {
   const [tab,      setTab]      = useState('stats')   // stats | bookings
   const [newCount, setNewCount] = useState(0)
 
+  // جلب الحجوزات من السيرفر
+  const fetchServerBookings = useCallback(async () => {
+    try {
+      const myPlace = JSON.parse(localStorage.getItem('dalilak_my_place') || 'null')
+      if (!myPlace?._id) return
+      const res = await fetch(`${API_BASE}/places/${myPlace._id}/bookings`, { signal: AbortSignal.timeout(5000) })
+      if (res.ok) {
+        const json = await res.json()
+        if (json.success && json.data?.length) {
+          // ادمج حجوزات السيرفر مع المحلية
+          const serverIds = new Set(json.data.map(b => b._id))
+          const localOnly = loadBookings().filter(b => !serverIds.has(b._id) && !serverIds.has(b.id))
+          const merged = [...json.data.map(b => ({ ...b, placeName: myPlace.name })), ...localOnly]
+          setBookings(merged)
+          localStorage.setItem(BOOKINGS_KEY, JSON.stringify(merged))
+        }
+      }
+    } catch (_) {}
+  }, [])
+
   useEffect(() => {
-    // احفظ الإحصائيات إن لم تكن موجودة
     if (!localStorage.getItem(STATS_KEY)) {
       localStorage.setItem(STATS_KEY, JSON.stringify(stats))
     }
+    fetchServerBookings()
+    // تحقق كل 15 ثانية من حجوزات جديدة
+    const interval = setInterval(fetchServerBookings, 15000)
+    return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {
     setNewCount(bookings.filter(b => b.status === 'pending').length)
   }, [bookings])
 
-  const updateStatus = (id, newStatus) => {
-    const updated = bookings.map(b => b.id === id ? { ...b, status: newStatus } : b)
+  const updateStatus = async (id, newStatus) => {
+    // حدّث على السيرفر
+    try {
+      const myPlace = JSON.parse(localStorage.getItem('dalilak_my_place') || 'null')
+      if (myPlace?._id) {
+        await fetch(`${API_BASE}/places/${myPlace._id}/bookings/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus }),
+          signal: AbortSignal.timeout(5000),
+        })
+      }
+    } catch (_) {}
+    // حدّث محلياً
+    const updated = bookings.map(b => (b._id === id || b.id === id) ? { ...b, status: newStatus } : b)
     setBookings(updated)
     localStorage.setItem(BOOKINGS_KEY, JSON.stringify(updated))
-    return updated.find(b => b.id === id)
+    return updated.find(b => b._id === id || b.id === id)
   }
 
   // إبلاغ الزبون عبر واتساب بعد التأكيد أو الإلغاء
@@ -81,7 +118,7 @@ export default function MyStatsPage() {
     const names  = ['أحمد علي', 'محمد حسن', 'علي كريم', 'سارة محمود', 'فاطمة عباس']
     const times  = ['7:00 م', '7:30 م', '8:00 م', '8:30 م', '9:00 م']
     const newB = {
-      id:      Date.now().toString(),
+      _id:     Date.now().toString(),
       name:    names[Math.floor(Math.random() * names.length)],
       phone:   '07' + Math.floor(Math.random() * 900000000 + 100000000),
       guests:  Math.floor(Math.random() * 5) + 1,

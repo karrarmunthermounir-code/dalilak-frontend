@@ -7,7 +7,7 @@
     "backgroundColor": "#0d1f17"
   },
   "server": {
-    "url": "https://dapper-syrniki-feb1ba.netlify.app",
+    "url": "https://dalilak-app.surge.sh",
     "cleartext": true
   },
   "plugins": {
