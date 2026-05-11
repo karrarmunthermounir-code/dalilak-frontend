@@ -81,10 +81,13 @@ export default function MyStatsPage() {
       }
     } catch (_) {}
     // حدّث محلياً
-    const updated = bookings.map(b => (b._id === id || b.id === id) ? { ...b, status: newStatus } : b)
+    const updated = bookings.map(b => {
+      const bId = b._id || b.id
+      return bId === id ? { ...b, status: newStatus } : b
+    })
     setBookings(updated)
     localStorage.setItem(BOOKINGS_KEY, JSON.stringify(updated))
-    return updated.find(b => b._id === id || b.id === id)
+    return updated.find(b => (b._id || b.id) === id)
   }
 
   // إبلاغ الزبون عبر واتساب بعد التأكيد أو الإلغاء
@@ -313,7 +316,7 @@ export default function MyStatsPage() {
               </div>
             ) : (
               bookings.map(b => (
-                <div key={b.id} style={{
+                <div key={b._id || b.id} style={{
                   background:'var(--bg-card)', border:`1px solid ${STATUS_COLORS[b.status]}33`,
                   borderRadius:'16px', padding:'1rem', marginBottom:'0.8rem',
                 }}>
@@ -347,16 +350,16 @@ export default function MyStatsPage() {
                   {/* أزرار الإجراءات */}
                   {b.status === 'pending' && (
                     <div style={{ display:'flex', gap:'0.5rem' }}>
-                      <button onClick={() => {
-                        const updated = updateStatus(b.id, 'confirmed')
+                      <button onClick={async () => {
+                        const updated = await updateStatus(b._id || b.id, 'confirmed')
                         notifyCustomer(updated, 'confirmed')
                       }} style={{
                         flex:1, padding:'0.55rem', borderRadius:'10px', border:'none',
                         background:'rgba(34,197,94,0.15)', color:'#22c55e',
                         fontWeight:700, fontSize:'0.8rem', cursor:'pointer', fontFamily:'var(--font-main)',
                       }}>✅ تأكيد + إبلاغ الزبون</button>
-                      <button onClick={() => {
-                        const updated = updateStatus(b.id, 'cancelled')
+                      <button onClick={async () => {
+                        const updated = await updateStatus(b._id || b.id, 'cancelled')
                         notifyCustomer(updated, 'cancelled')
                       }} style={{
                         flex:1, padding:'0.55rem', borderRadius:'10px', border:'none',
