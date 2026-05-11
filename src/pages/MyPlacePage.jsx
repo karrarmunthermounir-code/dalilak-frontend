@@ -70,7 +70,6 @@ export default function MyPlacePage() {
   const handleSave = async () => {
     if (!form?.name?.trim()) return alert('اسم المكان مطلوب')
     setSaving(true)
-    await new Promise(r => setTimeout(r, 600))
     savePlace(form)
     localStorage.setItem(TYPE_KEY, form.type || 'مطعم')
 
@@ -84,6 +83,20 @@ export default function MyPlacePage() {
         ? saved.map(p => (p._id || p.id) === myId ? { ...p, ...form } : p)
         : [form, ...saved]
       localStorage.setItem(USER_PLACES_KEY, JSON.stringify(updated))
+    } catch (_) {}
+
+    // ─── مزامنة التعديلات مع السيرفر ───
+    try {
+      const myId = form._id || form.id
+      if (myId) {
+        const API_BASE = (import.meta.env.VITE_API_URL || 'https://dalilak-backend.onrender.com') + '/api'
+        await fetch(`${API_BASE}/places/${myId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+          signal: AbortSignal.timeout(8000),
+        })
+      }
     } catch (_) {}
 
     setPlace(form)

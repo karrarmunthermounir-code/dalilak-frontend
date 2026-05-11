@@ -156,7 +156,7 @@ const empty = {
 
 export default function AdminPage() {
   const navigate = useNavigate()
-  const { isLoggedIn, isSubscribed, subscriptionTier } = useAuth()
+  const { isLoggedIn, isSubscribed, subscriptionTier, user } = useAuth()
 
   const [step,    setStep]    = useState(0) // 0=اختيار النوع 1=المعلومات 2=المنيو 3=نجاح
   const [form,    setForm]    = useState(empty)
@@ -215,7 +215,7 @@ export default function AdminPage() {
         images,
         menu: menuArr,
         area: form.address,
-        ownerId: 'user_local',
+        ownerId: user?.id || user?.identifier || 'user_local',
         isFeatured: subscriptionTier === 'premium',
         savedAt: Date.now(),
       }

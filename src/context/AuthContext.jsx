@@ -128,6 +128,30 @@ export function AuthProvider({ children }) {
   const [favorites,    setFavorites]    = useState(() => getCachedUser()?.favorites || [])
   const [loading,      setLoading]      = useState(true) // دائماً true بالبداية لحد ما نسترجع الجلسة
 
+  // ─── استعادة مكان المستخدم من السيرفر ───
+  const restoreMyPlace = async (userData) => {
+    try {
+      // إذا المكان موجود بـ localStorage لا حاجة للجلب
+      if (localStorage.getItem('dalilak_my_place')) return
+      const userId = userData.id || userData._id
+      if (!userId) return
+      const API_PLACES = (import.meta.env.VITE_API_URL || 'https://dalilak-backend.onrender.com') + '/api'
+      // جرب بـ user ID أولاً
+      let res = await fetch(`${API_PLACES}/places/my/${userId}`, { signal: AbortSignal.timeout(5000) })
+      let json = await res.json()
+      if (!json.data && userData.identifier) {
+        // جرب بـ identifier
+        res = await fetch(`${API_PLACES}/places/my/${encodeURIComponent(userData.identifier)}`, { signal: AbortSignal.timeout(5000) })
+        json = await res.json()
+      }
+      if (json.success && json.data) {
+        localStorage.setItem('dalilak_my_place', JSON.stringify(json.data))
+        localStorage.setItem('dalilak_my_place_type', json.data.type || 'مطعم')
+        console.log('✅ تم استعادة مكان المستخدم من السيرفر:', json.data.name)
+      }
+    } catch (_) {}
+  }
+
   // ─── استعادة الجلسة + تحديث من الخادم ───
   useEffect(() => {
     const init = async () => {
@@ -165,6 +189,9 @@ export function AuthProvider({ children }) {
           setSubscription({ ...sub, active, tier: active ? calcTier(sub) : 'free' })
           setFavorites(data.user.favorites || [])
 
+          // ─── استعادة مكان المستخدم تلقائياً ───
+          restoreMyPlace(data.user)
+
           // ─── تفعيل إشعارات Push تلقائياً لأصحاب الأماكن ───
           if (data.user.role === 'owner') {
             subscribeToPush(token).catch(() => {})
@@ -193,6 +220,9 @@ export function AuthProvider({ children }) {
     const active = isSubActive(sub)
     setSubscription({ ...sub, active, tier: active ? calcTier(sub) : 'free' })
     setFavorites(userData.favorites || [])
+
+    // ─── استعادة مكان المستخدم من السيرفر عند تسجيل الدخول ───
+    restoreMyPlace(userData)
 
     // ─── تفعيل إشعارات Push تلقائياً لأصحاب الأماكن ───
     if (userData.role === 'owner' && token) {
