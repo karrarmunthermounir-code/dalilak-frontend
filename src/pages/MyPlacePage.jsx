@@ -129,45 +129,51 @@ export default function MyPlacePage() {
   const [saving, setSaving]   = useState(false)
   const [loadingPlace, setLoadingPlace] = useState(true)
 
-  // ─── جلب المكان من السيرفر أولاً عند فتح الصفحة ───
+  // ─── جلب المكان عند فتح الصفحة ───
   useEffect(() => {
-    // انتظر حتى AuthContext يكمل تحميل بيانات المستخدم
-    if (authLoading) {
-      console.log('⏳ MyPlacePage: authLoading=true, ننتظر...')
-      return
-    }
-
-    console.log('🚀 MyPlacePage useEffect — user:', user?.id || user?._id, 'authLoading:', authLoading)
+    if (authLoading) return
 
     const load = async () => {
       setLoadingPlace(true)
-      
-      // 1. جلب من السيرفر (المصدر الأساسي)
+
+      // 1. اعرض من localStorage فوراً (بدون انتظار)
+      const localPlace = loadPlaceFromLocal()
+      if (localPlace) {
+        console.log('✅ مكان من localStorage فوراً:', localPlace.name)
+        setPlace(localPlace)
+        setLoadingPlace(false)
+        // ثم حدّث من السيرفر في الخلفية
+        if (user) {
+          loadPlaceFromServer(user).then(serverPlace => {
+            if (serverPlace) {
+              const allImages = [
+                ...(serverPlace.imageFiles || []),
+                ...(serverPlace.images || []),
+              ].filter(Boolean)
+              setPlace({ ...serverPlace, imageFiles: allImages.length > 0 ? allImages : serverPlace.imageFiles || [] })
+              console.log('🔄 تحديث من السيرفر:', serverPlace.name)
+            }
+          }).catch(() => {})
+        }
+        return
+      }
+
+      // 2. إذا localStorage فارغ — اجلب من السيرفر
       if (user) {
+        console.log('🌐 جلب من السيرفر...')
         const serverPlace = await loadPlaceFromServer(user)
         if (serverPlace) {
-          // دمج كل الصور (URLs و base64)
           const allImages = [
             ...(serverPlace.imageFiles || []),
             ...(serverPlace.images || []),
           ].filter(Boolean)
-          console.log('✅ مكان محمّل:', serverPlace.name, 'صور:', allImages.length)
           setPlace({ ...serverPlace, imageFiles: allImages.length > 0 ? allImages : serverPlace.imageFiles || [] })
-          setLoadingPlace(false)
-          return
+          console.log('✅ مكان من السيرفر:', serverPlace.name)
+        } else {
+          console.log('❌ لا يوجد مكان')
         }
       }
 
-      // 2. إذا السيرفر ما رجع شي، جرب localStorage
-      console.log('📱 محاولة من localStorage...')
-      const localPlace = loadPlaceFromLocal()
-      if (localPlace) {
-        console.log('✅ مكان من localStorage:', localPlace.name)
-        setPlace(localPlace)
-      } else {
-        console.log('❌ لا يوجد مكان لا بالسيرفر ولا بـ localStorage')
-      }
-      
       setLoadingPlace(false)
     }
     load()
