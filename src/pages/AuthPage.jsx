@@ -61,9 +61,11 @@ export default function AuthPage() {
     setLoading(true)
     setError('')
     try {
-      let userData
+      let userData, places = []
       if (mode === 'login') {
-        userData = await loginUser({ identifier: form.identifier.trim(), password: form.password })
+        const result = await loginUser({ identifier: form.identifier.trim(), password: form.password })
+        userData = result.user
+        places   = result.places || []
       } else {
         userData = await registerUser({
           name: form.name.trim(),
@@ -72,9 +74,9 @@ export default function AuthPage() {
         })
       }
 
-      // استخدم التوكن المحفوظ لاستعادة كل البيانات
+      // مرّر الأماكن مباشرةً — تُحفظ فوراً دون طلب إضافي
       const token = getToken()
-      await login(userData, token)
+      await login(userData, token, places)
       navigate(from, { replace: true })
     } catch (err) {
       setError(err.message)

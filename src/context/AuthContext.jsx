@@ -88,7 +88,15 @@ export const loginUser = async ({ identifier, password }) => {
   if (!data.success) throw new Error(data.message || 'خطأ في تسجيل الدخول')
   setToken(data.token)
   setCachedUser(data.user)
-  return data.user
+
+  // ─── حفظ أماكن المستخدم مباشرةً من response الـ Login ───
+  if (data.places && data.places.length > 0) {
+    localStorage.setItem('dalilak_my_place', JSON.stringify(data.places[0]))
+    localStorage.setItem('dalilak_my_place_type', data.places[0].type || 'مطعم')
+    console.log(`✅ Login: تم جلب ${data.places.length} مكان مباشرةً`)
+  }
+
+  return { user: data.user, places: data.places || [] }
 }
 
 export const activateSubscription = async (planId, planName) => {
@@ -241,7 +249,7 @@ export function AuthProvider({ children }) {
     init()
   }, [])
 
-  const login = useCallback(async (userData, token) => {
+  const login = useCallback(async (userData, token, places = []) => {
     if (token) setToken(token)
     setCachedUser(userData)
     setUser(userData)
@@ -250,17 +258,11 @@ export function AuthProvider({ children }) {
     setSubscription({ ...sub, active, tier: active ? calcTier(sub) : 'free' })
     setFavorites(userData.favorites || [])
 
-    // ─── استعادة كاملة لبيانات المستخدم من السيرفر ───
-    if (token) {
-      const fullData = await restoreAllData(token, userData)
-      if (fullData?.user) {
-        setUser(fullData.user)
-        setCachedUser(fullData.user)
-        const s = fullData.user.subscription || {}
-        const a = isSubActive(s)
-        setSubscription({ ...s, active: a, tier: a ? calcTier(s) : 'free' })
-        setFavorites(fullData.user.favorites || [])
-      }
+    // ─── حفظ الأماكن الجاهزة من الـ Login مباشرةً ───
+    if (places && places.length > 0) {
+      localStorage.setItem('dalilak_my_place', JSON.stringify(places[0]))
+      localStorage.setItem('dalilak_my_place_type', places[0].type || 'مطعم')
+      console.log(`✅ AuthContext.login: حُفظت ${places.length} أماكن فوراً`)
     }
 
     // ─── تفعيل إشعارات Push تلقائياً لأصحاب الأماكن ───
