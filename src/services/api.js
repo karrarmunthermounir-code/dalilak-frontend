@@ -597,9 +597,14 @@ export const fetchTypes = async () => {
 export const addPlace = async (placeData) => {
   // جرب حفظ في السيرفر أولاً (يظهر لكل الأجهزة)
   try {
+    const headers = { 'Content-Type': 'application/json' }
+    // إرسال التوكن لربط المكان بالمستخدم الحالي
+    const token = localStorage.getItem('dalilak_token')
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    
     const res = await fetch(`${API_BASE}/places`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(placeData),
       signal: AbortSignal.timeout(8000),
     })
