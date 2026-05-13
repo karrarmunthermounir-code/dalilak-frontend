@@ -559,10 +559,16 @@ export const fetchPlaceById = async (id) => {
 
 // ── حذف مكان المستخدم من السيرفر + الذاكرة + localStorage ──
 export const removeUserPlace = async (id) => {
-  // جرب حذف من السيرفر
+  // جرب حذف من السيرفر مع التحقق من الهوية
   try {
+    const headers = {}
+    // جلب التوكن من localStorage مباشرة
+    const token = localStorage.getItem('dalilak_token')
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    
     await fetch(`${API_BASE}/places/${id}`, {
       method: 'DELETE',
+      headers,
       signal: AbortSignal.timeout(5000),
     })
   } catch (_) {}

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useAuth, registerUser, loginUser } from '../context/AuthContext'
+import { useAuth, registerUser, loginUser, getToken } from '../context/AuthContext'
 
 // ─── تحقق من البريد الإلكتروني ───
 const isEmail = (val) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)
@@ -72,7 +72,9 @@ export default function AuthPage() {
         })
       }
 
-      login(userData)
+      // استخدم التوكن المحفوظ لاستعادة كل البيانات
+      const token = getToken()
+      await login(userData, token)
       navigate(from, { replace: true })
     } catch (err) {
       setError(err.message)

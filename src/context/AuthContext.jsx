@@ -17,7 +17,7 @@ const setCachedUser = (u) => {
   localStorage.setItem(USER_KEY, json)
   Preferences.set({ key: USER_KEY, value: json }).catch(() => {})
 }
-const getToken = () => localStorage.getItem(TOKEN_KEY)
+export const getToken = () => localStorage.getItem(TOKEN_KEY)
 const setToken = (t) => {
   localStorage.setItem(TOKEN_KEY, t)
   Preferences.set({ key: TOKEN_KEY, value: t }).catch(() => {})
@@ -119,6 +119,33 @@ export const getStats = async (placeId) => {
   } catch { return null }
 }
 
+// ════════════════════════════════════════════════
+// ─── استعادة كاملة لبيانات المستخدم من السيرفر ───
+// ════════════════════════════════════════════════
+const restoreAllData = async (token, userData) => {
+  try {
+    const res = await fetch(`${API}/auth/my-data`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: AbortSignal.timeout(8000),
+    })
+    const json = await res.json()
+    if (!json.success) return null
+
+    // ─── استعادة أماكن المستخدم ───
+    if (json.places && json.places.length > 0) {
+      // حفظ المكان الأول كـ "مكاني" (التوافق مع الكود القديم)
+      localStorage.setItem('dalilak_my_place', JSON.stringify(json.places[0]))
+      localStorage.setItem('dalilak_my_place_type', json.places[0].type || 'مطعم')
+      console.log(`✅ تم استعادة ${json.places.length} مكان من السيرفر`)
+    }
+
+    return json
+  } catch (err) {
+    console.warn('restoreAllData error:', err.message)
+    return null
+  }
+}
+
 // ════════════════════════════════
 // AuthProvider
 // ════════════════════════════════
@@ -127,30 +154,6 @@ export function AuthProvider({ children }) {
   const [subscription, setSubscription] = useState(() => getCachedUser()?.subscription || { active: false, tier: 'free' })
   const [favorites,    setFavorites]    = useState(() => getCachedUser()?.favorites || [])
   const [loading,      setLoading]      = useState(true) // دائماً true بالبداية لحد ما نسترجع الجلسة
-
-  // ─── استعادة مكان المستخدم من السيرفر ───
-  const restoreMyPlace = async (userData) => {
-    try {
-      // إذا المكان موجود بـ localStorage لا حاجة للجلب
-      if (localStorage.getItem('dalilak_my_place')) return
-      const userId = userData.id || userData._id
-      if (!userId) return
-      const API_PLACES = (import.meta.env.VITE_API_URL || 'https://dalilak-backend.onrender.com') + '/api'
-      // جرب بـ user ID أولاً
-      let res = await fetch(`${API_PLACES}/places/my/${userId}`, { signal: AbortSignal.timeout(5000) })
-      let json = await res.json()
-      if (!json.data && userData.identifier) {
-        // جرب بـ identifier
-        res = await fetch(`${API_PLACES}/places/my/${encodeURIComponent(userData.identifier)}`, { signal: AbortSignal.timeout(5000) })
-        json = await res.json()
-      }
-      if (json.success && json.data) {
-        localStorage.setItem('dalilak_my_place', JSON.stringify(json.data))
-        localStorage.setItem('dalilak_my_place_type', json.data.type || 'مطعم')
-        console.log('✅ تم استعادة مكان المستخدم من السيرفر:', json.data.name)
-      }
-    } catch (_) {}
-  }
 
   // ─── استعادة الجلسة + تحديث من الخادم ───
   useEffect(() => {
@@ -175,25 +178,20 @@ export function AuthProvider({ children }) {
         return
       }
 
-      // 3. تحديث من السيرفر (بالخلفية — لا ينتظر المستخدم)
+      // 3. استعادة كاملة من السيرفر (بيانات + أماكن + إعدادات)
       try {
-        const res = await fetch(`${API}/auth/me`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        })
-        const data = await res.json()
-        if (data.success) {
-          setUser(data.user)
-          setCachedUser(data.user)
-          const sub = data.user.subscription || {}
+        const fullData = await restoreAllData(token, cachedUser)
+        
+        if (fullData?.user) {
+          setUser(fullData.user)
+          setCachedUser(fullData.user)
+          const sub = fullData.user.subscription || {}
           const active = isSubActive(sub)
           setSubscription({ ...sub, active, tier: active ? calcTier(sub) : 'free' })
-          setFavorites(data.user.favorites || [])
-
-          // ─── استعادة مكان المستخدم تلقائياً ───
-          restoreMyPlace(data.user)
+          setFavorites(fullData.user.favorites || [])
 
           // ─── تفعيل إشعارات Push تلقائياً لأصحاب الأماكن ───
-          if (data.user.role === 'owner') {
+          if (fullData.user.role === 'owner') {
             subscribeToPush(token).catch(() => {})
           }
         } else if (!cachedUser) {
@@ -212,7 +210,7 @@ export function AuthProvider({ children }) {
     init()
   }, [])
 
-  const login = useCallback((userData, token) => {
+  const login = useCallback(async (userData, token) => {
     if (token) setToken(token)
     setCachedUser(userData)
     setUser(userData)
@@ -221,8 +219,18 @@ export function AuthProvider({ children }) {
     setSubscription({ ...sub, active, tier: active ? calcTier(sub) : 'free' })
     setFavorites(userData.favorites || [])
 
-    // ─── استعادة مكان المستخدم من السيرفر عند تسجيل الدخول ───
-    restoreMyPlace(userData)
+    // ─── استعادة كاملة لبيانات المستخدم من السيرفر ───
+    if (token) {
+      const fullData = await restoreAllData(token, userData)
+      if (fullData?.user) {
+        setUser(fullData.user)
+        setCachedUser(fullData.user)
+        const s = fullData.user.subscription || {}
+        const a = isSubActive(s)
+        setSubscription({ ...s, active: a, tier: a ? calcTier(s) : 'free' })
+        setFavorites(fullData.user.favorites || [])
+      }
+    }
 
     // ─── تفعيل إشعارات Push تلقائياً لأصحاب الأماكن ───
     if (userData.role === 'owner' && token) {
@@ -232,6 +240,11 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     clearCache()
+    // امسح بيانات المكان المحلية أيضاً
+    localStorage.removeItem('dalilak_my_place')
+    localStorage.removeItem('dalilak_my_place_type')
+    localStorage.removeItem('dalilak_my_menu')
+    localStorage.removeItem('dalilak_table_bookings')
     setUser(null)
     setSubscription({ active: false, tier: 'free' })
     setFavorites([])
@@ -346,6 +359,22 @@ export function AuthProvider({ children }) {
     } catch {}
   }, [])
 
+  // ─── حفظ الإعدادات في السيرفر ───
+  const updateSettings = useCallback(async (settings) => {
+    const token = getToken()
+    if (!token) return
+    try {
+      await fetch(`${API}/auth/settings`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ settings }),
+      })
+    } catch {}
+  }, [])
+
   const tier = subscription?.tier || 'free'
 
   return (
@@ -358,7 +387,7 @@ export function AuthProvider({ children }) {
       // المفضلة
       favorites, toggleFavorite, isFavorite,
       // تحديث البيانات
-      updateUser,
+      updateUser, updateSettings,
       // صلاحيات
       isOwner: user?.role === 'owner',
       canEditMenu:       ['pro', 'premium'].includes(tier),

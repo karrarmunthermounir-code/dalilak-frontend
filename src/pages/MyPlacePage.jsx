@@ -1,12 +1,46 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, getToken } from '../context/AuthContext'
 import { IRAQ_GOVERNORATES, removeUserPlace } from '../services/api'
 
 const PLACE_KEY = 'dalilak_my_place'
 const TYPE_KEY  = 'dalilak_my_place_type'
+const API_BASE = (import.meta.env.VITE_API_URL || 'https://dalilak-backend.onrender.com') + '/api'
 
-const loadPlace = () => {
+// ─── جلب مكان المستخدم من السيرفر أولاً ثم localStorage ───
+const loadPlaceFromServer = async (user) => {
+  try {
+    const userId = user?.id || user?._id
+    const identifier = user?.identifier
+    if (!userId && !identifier) return null
+
+    // جرب بـ user ID أولاً
+    let res = await fetch(`${API_BASE}/places/my/${userId}`, { signal: AbortSignal.timeout(6000) })
+    let json = await res.json()
+    if (json.success && json.data) {
+      // حفظ محلياً للوصول السريع لاحقاً
+      localStorage.setItem(PLACE_KEY, JSON.stringify(json.data))
+      localStorage.setItem(TYPE_KEY, json.data.type || 'مطعم')
+      return json.data
+    }
+
+    // جرب بـ identifier
+    if (identifier) {
+      res = await fetch(`${API_BASE}/places/my/${encodeURIComponent(identifier)}`, { signal: AbortSignal.timeout(6000) })
+      json = await res.json()
+      if (json.success && json.data) {
+        localStorage.setItem(PLACE_KEY, JSON.stringify(json.data))
+        localStorage.setItem(TYPE_KEY, json.data.type || 'مطعم')
+        return json.data
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+const loadPlaceFromLocal = () => {
   try {
     const raw = JSON.parse(localStorage.getItem(PLACE_KEY) || 'null')
     if (!raw) return null
@@ -18,6 +52,7 @@ const loadPlace = () => {
     return { ...raw, imageFiles: allImages }
   } catch { return null }
 }
+
 const savePlace = (p) => localStorage.setItem(PLACE_KEY, JSON.stringify(p))
 
 const compressImage = (file, maxWidth = 800, quality = 0.7) =>
@@ -51,12 +86,43 @@ const card = {
 
 export default function MyPlacePage() {
   const navigate = useNavigate()
-  const { isLoggedIn } = useAuth()
-  const [place, setPlace]     = useState(loadPlace)
+  const { isLoggedIn, user } = useAuth()
+  const [place, setPlace]     = useState(null)
   const [editing, setEditing] = useState(false)
   const [form, setForm]       = useState(null)
   const [showDelete, setShowDelete] = useState(false)
   const [saving, setSaving]   = useState(false)
+  const [loadingPlace, setLoadingPlace] = useState(true)
+
+  // ─── جلب المكان من السيرفر أولاً عند فتح الصفحة ───
+  useEffect(() => {
+    const load = async () => {
+      setLoadingPlace(true)
+      
+      // 1. جلب من السيرفر (المصدر الأساسي)
+      if (user) {
+        const serverPlace = await loadPlaceFromServer(user)
+        if (serverPlace) {
+          const allImages = [
+            ...(serverPlace.imageFiles || []),
+            ...(serverPlace.images || []).filter(img => img && img.startsWith('data:')),
+          ]
+          setPlace({ ...serverPlace, imageFiles: allImages })
+          setLoadingPlace(false)
+          return
+        }
+      }
+
+      // 2. إذا السيرفر ما رجع شي، جرب localStorage
+      const localPlace = loadPlaceFromLocal()
+      if (localPlace) {
+        setPlace(localPlace)
+      }
+      
+      setLoadingPlace(false)
+    }
+    load()
+  }, [user])
 
   useEffect(() => {
     if (place && !form) {
@@ -67,6 +133,7 @@ export default function MyPlacePage() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  // ─── حفظ التعديلات (سيرفر + محلي) ───
   const handleSave = async () => {
     if (!form?.name?.trim()) return alert('اسم المكان مطلوب')
     setSaving(true)
@@ -85,14 +152,17 @@ export default function MyPlacePage() {
       localStorage.setItem(USER_PLACES_KEY, JSON.stringify(updated))
     } catch (_) {}
 
-    // ─── مزامنة التعديلات مع السيرفر ───
+    // ─── مزامنة التعديلات مع السيرفر (مع Authentication) ───
     try {
       const myId = form._id || form.id
       if (myId) {
-        const API_BASE = (import.meta.env.VITE_API_URL || 'https://dalilak-backend.onrender.com') + '/api'
+        const token = getToken()
+        const headers = { 'Content-Type': 'application/json' }
+        if (token) headers['Authorization'] = `Bearer ${token}`
+        
         await fetch(`${API_BASE}/places/${myId}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify(form),
           signal: AbortSignal.timeout(8000),
         })
@@ -104,9 +174,23 @@ export default function MyPlacePage() {
     setSaving(false)
   }
 
-  const handleDelete = () => {
-    const myPlace = loadPlace()
+  // ─── حذف المكان (سيرفر + محلي مع Authentication) ───
+  const handleDelete = async () => {
+    const myPlace = place || loadPlaceFromLocal()
     const myId    = myPlace?._id || myPlace?.id || ''
+
+    // حذف من السيرفر مع التحقق من الهوية
+    try {
+      const token = getToken()
+      const headers = {}
+      if (token) headers['Authorization'] = `Bearer ${token}`
+      
+      await fetch(`${API_BASE}/places/${myId}`, {
+        method: 'DELETE',
+        headers,
+        signal: AbortSignal.timeout(5000),
+      })
+    } catch (_) {}
 
     // امسح من الذاكرة + localStorage (الواجهة الرئيسية)
     if (myId) removeUserPlace(myId)
@@ -147,6 +231,16 @@ export default function MyPlacePage() {
         <button onClick={() => navigate('/auth')} style={{ marginTop:'1rem', padding:'0.7rem 1.5rem', borderRadius:'12px', border:'none', background:'var(--color-primary)', color:'#fff', cursor:'pointer', fontFamily:'var(--font-main)' }}>
           تسجيل الدخول
         </button>
+      </div>
+    </div>
+  )
+
+  // ─── شاشة التحميل ───
+  if (loadingPlace) return (
+    <div style={{ minHeight:'100vh', background:'var(--bg-dark)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{ textAlign:'center' }}>
+        <div style={{ fontSize:'2.5rem', marginBottom:'1rem', animation:'pulse 1s ease infinite' }}>🔄</div>
+        <p style={{ color:'var(--text-muted)', fontSize:'0.9rem' }}>جاري تحميل بيانات مكانك...</p>
       </div>
     </div>
   )
