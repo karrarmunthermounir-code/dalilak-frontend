@@ -25,7 +25,7 @@ const loadPlaceFromServer = async (user) => {
       try {
         const myDataRes = await fetch(`${API_BASE}/auth/my-data`, {
           headers: { 'Authorization': `Bearer ${token}` },
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(30000),
         })
         const myData = await myDataRes.json()
         console.log('📦 my-data response:', myData.success, 'places:', myData.places?.length)
@@ -44,7 +44,7 @@ const loadPlaceFromServer = async (user) => {
     // ثانياً: جرب بـ user ID
     if (userId) {
       console.log('🔍 محاولة عبر /api/places/my/' + userId)
-      let res = await fetch(`${API_BASE}/places/my/${userId}`, { signal: AbortSignal.timeout(6000) })
+      let res = await fetch(`${API_BASE}/places/my/${userId}`, { signal: AbortSignal.timeout(30000) })
       let json = await res.json()
       console.log('📦 places/my response:', json.success, 'data:', json.data?.name, 'places:', json.places?.length)
       if (json.success && json.data) {
@@ -57,7 +57,7 @@ const loadPlaceFromServer = async (user) => {
     // ثالثاً: جرب بـ identifier
     if (identifier) {
       console.log('🔍 محاولة عبر /api/places/my/' + identifier)
-      const res = await fetch(`${API_BASE}/places/my/${encodeURIComponent(identifier)}`, { signal: AbortSignal.timeout(6000) })
+      const res = await fetch(`${API_BASE}/places/my/${encodeURIComponent(identifier)}`, { signal: AbortSignal.timeout(30000) })
       const json = await res.json()
       console.log('📦 places/my/identifier response:', json.success, 'data:', json.data?.name)
       if (json.success && json.data) {

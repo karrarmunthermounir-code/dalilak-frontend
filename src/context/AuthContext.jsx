@@ -120,30 +120,61 @@ export const getStats = async (placeId) => {
 }
 
 // ════════════════════════════════════════════════
+// ─── إيقاظ السيرفر (Render free-tier ينام بعد 15 دقيقة) ───
+// ════════════════════════════════════════════════
+const wakeUpServer = async () => {
+  try {
+    console.log('⏰ إيقاظ السيرفر...')
+    await fetch(`${API}/places/types`, { signal: AbortSignal.timeout(45000) })
+    console.log('✅ السيرفر مستيقظ')
+    return true
+  } catch {
+    console.warn('⚠️ السيرفر لم يستجب')
+    return false
+  }
+}
+
+// ════════════════════════════════════════════════
 // ─── استعادة كاملة لبيانات المستخدم من السيرفر ───
 // ════════════════════════════════════════════════
 const restoreAllData = async (token, userData) => {
-  try {
-    const res = await fetch(`${API}/auth/my-data`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-      signal: AbortSignal.timeout(8000),
-    })
-    const json = await res.json()
-    if (!json.success) return null
+  // أولاً: إيقاظ السيرفر (Render يأخذ 30-60 ثانية من السكون)
+  await wakeUpServer()
 
-    // ─── استعادة أماكن المستخدم ───
-    if (json.places && json.places.length > 0) {
-      // حفظ المكان الأول كـ "مكاني" (التوافق مع الكود القديم)
-      localStorage.setItem('dalilak_my_place', JSON.stringify(json.places[0]))
-      localStorage.setItem('dalilak_my_place_type', json.places[0].type || 'مطعم')
-      console.log(`✅ تم استعادة ${json.places.length} مكان من السيرفر`)
+  // محاولتين للاتصال
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      console.log(`🔄 restoreAllData محاولة ${attempt}...`)
+      const res = await fetch(`${API}/auth/my-data`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+        signal: AbortSignal.timeout(30000), // 30 ثانية timeout
+      })
+      const json = await res.json()
+      if (!json.success) {
+        console.warn('restoreAllData response not success:', json.message)
+        continue
+      }
+
+      // ─── استعادة أماكن المستخدم ───
+      if (json.places && json.places.length > 0) {
+        // حفظ المكان الأول كـ "مكاني" (التوافق مع الكود القديم)
+        localStorage.setItem('dalilak_my_place', JSON.stringify(json.places[0]))
+        localStorage.setItem('dalilak_my_place_type', json.places[0].type || 'مطعم')
+        console.log(`✅ تم استعادة ${json.places.length} مكان من السيرفر`)
+      } else {
+        console.log('ℹ️ لا توجد أماكن للمستخدم')
+      }
+
+      return json
+    } catch (err) {
+      console.warn(`restoreAllData محاولة ${attempt} فشلت:`, err.message)
+      if (attempt === 1) {
+        // انتظر 3 ثوانٍ ثم أعد المحاولة
+        await new Promise(r => setTimeout(r, 3000))
+      }
     }
-
-    return json
-  } catch (err) {
-    console.warn('restoreAllData error:', err.message)
-    return null
   }
+  return null
 }
 
 // ════════════════════════════════
