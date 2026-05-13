@@ -215,7 +215,7 @@ export default function AdminPage() {
         images,
         menu: menuArr,
         area: form.address,
-        ownerId: user?.id || user?.identifier || 'user_local',
+        // ownerId يُحدد في الـ backend من التوكن تلقائياً (أكثر أماناً)
         isFeatured: subscriptionTier === 'premium',
         savedAt: Date.now(),
       }
