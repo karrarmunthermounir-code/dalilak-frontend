@@ -12,30 +12,65 @@ const loadPlaceFromServer = async (user) => {
   try {
     const userId = user?.id || user?._id
     const identifier = user?.identifier
-    if (!userId && !identifier) return null
-
-    // جرب بـ user ID أولاً
-    let res = await fetch(`${API_BASE}/places/my/${userId}`, { signal: AbortSignal.timeout(6000) })
-    let json = await res.json()
-    if (json.success && json.data) {
-      // حفظ محلياً للوصول السريع لاحقاً
-      localStorage.setItem(PLACE_KEY, JSON.stringify(json.data))
-      localStorage.setItem(TYPE_KEY, json.data.type || 'مطعم')
-      return json.data
+    console.log('🔍 loadPlaceFromServer — userId:', userId, 'identifier:', identifier)
+    if (!userId && !identifier) {
+      console.log('❌ لا يوجد userId أو identifier')
+      return null
     }
 
-    // جرب بـ identifier
-    if (identifier) {
-      res = await fetch(`${API_BASE}/places/my/${encodeURIComponent(identifier)}`, { signal: AbortSignal.timeout(6000) })
-      json = await res.json()
+    // أولاً: جرب /api/auth/my-data مع التوكن (الطريقة الأضمن)
+    const token = localStorage.getItem('dalilak_token')
+    if (token) {
+      console.log('🔑 محاولة عبر /api/auth/my-data مع التوكن...')
+      try {
+        const myDataRes = await fetch(`${API_BASE}/auth/my-data`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          signal: AbortSignal.timeout(8000),
+        })
+        const myData = await myDataRes.json()
+        console.log('📦 my-data response:', myData.success, 'places:', myData.places?.length)
+        if (myData.success && myData.places && myData.places.length > 0) {
+          const place = myData.places[0]
+          localStorage.setItem(PLACE_KEY, JSON.stringify(place))
+          localStorage.setItem(TYPE_KEY, place.type || 'مطعم')
+          console.log('✅ تم جلب المكان عبر my-data:', place.name)
+          return place
+        }
+      } catch (e) {
+        console.warn('⚠️ my-data فشل:', e.message)
+      }
+    }
+
+    // ثانياً: جرب بـ user ID
+    if (userId) {
+      console.log('🔍 محاولة عبر /api/places/my/' + userId)
+      let res = await fetch(`${API_BASE}/places/my/${userId}`, { signal: AbortSignal.timeout(6000) })
+      let json = await res.json()
+      console.log('📦 places/my response:', json.success, 'data:', json.data?.name, 'places:', json.places?.length)
       if (json.success && json.data) {
         localStorage.setItem(PLACE_KEY, JSON.stringify(json.data))
         localStorage.setItem(TYPE_KEY, json.data.type || 'مطعم')
         return json.data
       }
     }
+
+    // ثالثاً: جرب بـ identifier
+    if (identifier) {
+      console.log('🔍 محاولة عبر /api/places/my/' + identifier)
+      const res = await fetch(`${API_BASE}/places/my/${encodeURIComponent(identifier)}`, { signal: AbortSignal.timeout(6000) })
+      const json = await res.json()
+      console.log('📦 places/my/identifier response:', json.success, 'data:', json.data?.name)
+      if (json.success && json.data) {
+        localStorage.setItem(PLACE_KEY, JSON.stringify(json.data))
+        localStorage.setItem(TYPE_KEY, json.data.type || 'مطعم')
+        return json.data
+      }
+    }
+
+    console.log('❌ لم يتم العثور على أي مكان بالسيرفر')
     return null
-  } catch {
+  } catch (err) {
+    console.error('❌ loadPlaceFromServer error:', err)
     return null
   }
 }
@@ -45,11 +80,11 @@ const loadPlaceFromLocal = () => {
     const raw = JSON.parse(localStorage.getItem(PLACE_KEY) || 'null')
     if (!raw) return null
     // دمج images و imageFiles في مصفوفة واحدة imageFiles
-    const allImages = [
+    const images = [
       ...(raw.imageFiles || []),
-      ...(raw.images || []).filter(img => img && img.startsWith('data:')), // فقط Base64
-    ]
-    return { ...raw, imageFiles: allImages }
+      ...(raw.images || []),
+    ].filter(Boolean)
+    return { ...raw, imageFiles: images.length > 0 ? images : raw.imageFiles || [] }
   } catch { return null }
 }
 
@@ -97,7 +132,12 @@ export default function MyPlacePage() {
   // ─── جلب المكان من السيرفر أولاً عند فتح الصفحة ───
   useEffect(() => {
     // انتظر حتى AuthContext يكمل تحميل بيانات المستخدم
-    if (authLoading) return
+    if (authLoading) {
+      console.log('⏳ MyPlacePage: authLoading=true, ننتظر...')
+      return
+    }
+
+    console.log('🚀 MyPlacePage useEffect — user:', user?.id || user?._id, 'authLoading:', authLoading)
 
     const load = async () => {
       setLoadingPlace(true)
@@ -106,20 +146,26 @@ export default function MyPlacePage() {
       if (user) {
         const serverPlace = await loadPlaceFromServer(user)
         if (serverPlace) {
+          // دمج كل الصور (URLs و base64)
           const allImages = [
             ...(serverPlace.imageFiles || []),
-            ...(serverPlace.images || []).filter(img => img && img.startsWith('data:')),
-          ]
-          setPlace({ ...serverPlace, imageFiles: allImages })
+            ...(serverPlace.images || []),
+          ].filter(Boolean)
+          console.log('✅ مكان محمّل:', serverPlace.name, 'صور:', allImages.length)
+          setPlace({ ...serverPlace, imageFiles: allImages.length > 0 ? allImages : serverPlace.imageFiles || [] })
           setLoadingPlace(false)
           return
         }
       }
 
       // 2. إذا السيرفر ما رجع شي، جرب localStorage
+      console.log('📱 محاولة من localStorage...')
       const localPlace = loadPlaceFromLocal()
       if (localPlace) {
+        console.log('✅ مكان من localStorage:', localPlace.name)
         setPlace(localPlace)
+      } else {
+        console.log('❌ لا يوجد مكان لا بالسيرفر ولا بـ localStorage')
       }
       
       setLoadingPlace(false)

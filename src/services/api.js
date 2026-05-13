@@ -9,7 +9,7 @@ export const IRAQ_GOVERNORATES = [
 ]
 
 // عنوان السيرفر الحقيقي
-const API_BASE = (import.meta.env.VITE_API_URL || 'https://dalilak-api.onrender.com') + '/api'
+const API_BASE = (import.meta.env.VITE_API_URL || 'https://dalilak-backend.onrender.com') + '/api'
 
 const delay = (ms) => new Promise(r => setTimeout(r, ms))
 

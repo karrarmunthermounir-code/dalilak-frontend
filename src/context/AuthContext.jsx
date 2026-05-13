@@ -4,7 +4,7 @@ import { subscribeToPush } from '../services/pushNotifications'
 
 const AuthContext = createContext(null)
 
-const API = (import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api'
+const API = (import.meta.env.VITE_API_URL || 'https://dalilak-backend.onrender.com') + '/api'
 const TOKEN_KEY = 'dalilak_token'
 const USER_KEY  = 'dalilak_user'
 

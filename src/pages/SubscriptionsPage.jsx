@@ -89,7 +89,7 @@ function PaymentModal({ plan, onClose, onConfirm, userInfo }) {
     setError('')
     setStep('loading')
     try {
-      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+      const API_BASE = import.meta.env.VITE_API_URL || 'https://dalilak-backend.onrender.com'
       const res = await fetch(`${API_BASE}/api/payment/zaincash/init`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
