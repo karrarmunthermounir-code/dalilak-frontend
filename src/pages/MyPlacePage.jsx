@@ -86,7 +86,7 @@ const card = {
 
 export default function MyPlacePage() {
   const navigate = useNavigate()
-  const { isLoggedIn, user } = useAuth()
+  const { isLoggedIn, user, loading: authLoading } = useAuth()
   const [place, setPlace]     = useState(null)
   const [editing, setEditing] = useState(false)
   const [form, setForm]       = useState(null)
@@ -96,6 +96,9 @@ export default function MyPlacePage() {
 
   // ─── جلب المكان من السيرفر أولاً عند فتح الصفحة ───
   useEffect(() => {
+    // انتظر حتى AuthContext يكمل تحميل بيانات المستخدم
+    if (authLoading) return
+
     const load = async () => {
       setLoadingPlace(true)
       
@@ -122,7 +125,7 @@ export default function MyPlacePage() {
       setLoadingPlace(false)
     }
     load()
-  }, [user])
+  }, [user, authLoading])
 
   useEffect(() => {
     if (place && !form) {
